@@ -1,0 +1,9 @@
+azure-storage-blob
+pandas
+numpy
+PyPDF2
+openai
+transformers
+tqdm
+ipykernel
+feedparser
