@@ -2,11 +2,15 @@ import os
 import openai
 import pandas as pd
 import numpy as np
-from PyPDF2 import PdfReader
+import pypdf
+import google.generativeai as genai
+from google.api_core.exceptions import GoogleAPICallError
+
+
 
 def extract_text_from_pdf(file_path):
     try:
-        reader = PdfReader(file_path)
+        reader = pypdf.PdfReader(file_path)
         text = ""
         for page in reader.pages:
             text += page.extract_text()
@@ -14,7 +18,6 @@ def extract_text_from_pdf(file_path):
     except Exception as e:
         print(f"Error encountered while opening or processing {file_path}: {e}")
         return None
-
 
 def get_all_file_paths(directory):
     file_paths = []
@@ -25,6 +28,8 @@ def get_all_file_paths(directory):
     return file_paths
 
 
+
+# ChatGPT
 def get_gpt_response(user_prompt, system_prompt,engine, max_completion=800,token_buffer=0, retries=3):
     for attempt in range(retries):
         try:
@@ -55,7 +60,6 @@ def get_gpt_response(user_prompt, system_prompt,engine, max_completion=800,token
     # If all retries fail, return a failure message
     return "Error: Unable to get a valid response after retries."
 
-
 def count_tokens(text, engine):
     if pd.isna(text):
         return np.nan
@@ -66,7 +70,6 @@ def count_tokens(text, engine):
             max_completion_tokens=1  # We don't want to generate a response, just count tokens
         )
         return response['usage']['total_tokens']
-
 
 #function to limit the input tokens
 def get_tokens_between_indices(text, engine, max_tokens):
@@ -82,6 +85,25 @@ def get_tokens_between_indices(text, engine, max_tokens):
         return text
 
 
+
+# Google Gemini
+def get_gemini_response(user_prompt, api_key):
+    try:
+        # Configure the API key
+        genai.configure(api_key=api_key)
+
+        # Specify the model you want to use (e.g., "gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
+
+        # Generate text
+        response = model.generate_content(contents=user_prompt)
+        return response.text
+    
+    except GoogleAPICallError as e:
+        return f"Google API Error: {e}"
+    except Exception as e:
+        return f"An unexpected error occurred: {e}"
+        
 
 
 

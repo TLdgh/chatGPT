@@ -1,9 +1,13 @@
 azure-storage-blob
 pandas
 numpy
-PyPDF2
-openai
-transformers
+pypdf
 tqdm
 ipykernel
 feedparser
+pytest
+psycopg2
+pyodbc
+python-dotenv
+google-generativeai
+openai
