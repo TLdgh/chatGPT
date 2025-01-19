@@ -119,7 +119,11 @@ class Arxiv_API:
                     pdfurl = link.href
                 else:
                     continue
-
+                
+                if not pdfurl:
+                    logging.warning(f"No PDF available for Article ID: {entry.id}")
+                    continue
+                    
                 filename = "Article_%s" % ids + ".pdf"
                 filepath = f"{self.file_dir[j]}/{filename}"
                 
@@ -142,6 +146,7 @@ class Arxiv_API:
                             "Failed to download pdf from metadata list %i article %i."
                             % (j, i)
                         )
+                        continue
                 else:
                     logging.info(
                         "PDF from metadata list %i article %i already exists." % (j, i)
