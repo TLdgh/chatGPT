@@ -1,4 +1,3 @@
-import urllib.request as libreq
 import requests, feedparser, logging
 import pandas as pd
 import time, random
@@ -9,8 +8,7 @@ from Document import Document
 class Arxiv_API:
     def __init__(
         self,
-        file_dir: str,
-        search="",
+        search=list,
         start_date="2001-01-01",
         end_date="2023-07-01",
         start=0,
@@ -18,15 +16,18 @@ class Arxiv_API:
         downloadstuff=False,
     ):
         self.base_url = "http://export.arxiv.org/api/query?"
-        self.file_dir = file_dir
+        self.file_dir = ['../SampleData/' + subj for subj in search]
 
         if search != "":
-            self.query = [
-                "search_query=%s&start=%i&max_results=%i" % (search, start, max_results)
-            ]
+            self.query = ["search_query=%s&start=%i&max_results=%i" % (subj+"*", start, max_results) for subj in search]
         else:
-            print("Must provide a search item or the Kaggle data set.")
+            print("Must provide a search item.")
 
+        for fdir in self.file_dir:
+            if not os.path.exists(fdir):
+                # Create the folder
+                os.makedirs(fdir)
+        
         self.getResponse(downloadstuff)
 
     def getResponse(self, downloadstuff):  # get the metadata and download pdf if needed
@@ -50,8 +51,8 @@ class Arxiv_API:
 
         for j in range(len(self.query)):
             # perfom a request using the base_url and query. This gives Atom code
-            with libreq.urlopen(self.base_url + self.query[j]) as url:
-                self.response[j] = url.read()
+            queries=requests.get(self.base_url + self.query[j])
+            self.response[j] = queries.content
 
             # parse the response
             self.metadata[j] = feedparser.parse(self.response[j])
@@ -93,7 +94,7 @@ class Arxiv_API:
             self.df = pd.DataFrame([i for i in self.data], columns=dataCol)
 
             jfile = self.df.to_dict()
-            with open(f"{self.file_dir}/metadata.json", "w") as outfile:
+            with open(f"../SampleData/metadata.json", "w") as outfile:
                 json.dump(jfile, outfile)
 
     def DownloadResult(
@@ -102,7 +103,6 @@ class Arxiv_API:
         # initiate empty data consisting of list variables
         datalist = []
 
-        count = j * self.trunc if hasattr(self, "kaggle") == True else 0
         # Run through each entry (article) in each metadata, and print out information
         for i, entry in enumerate(datachunk.entries):
             logging.info("Generating e-print metadata for Article " + str(entry.id))
@@ -112,12 +112,8 @@ class Arxiv_API:
                 if (
                     link.rel == "related" and link.title == "pdf"
                 ):  # check if there's a pdf in arxiv
-                    if hasattr(self, "kaggle") == False:
-                        ids = entry.id.split("/")[-1]
-                        pdfurl = link.href
-                    else:
-                        ids = self.kaggle["id"].iloc[count]
-                        pdfurl = "https://export.arxiv.org/pdf/" + ids
+                    ids = entry.id.split("/")[-1]
+                    pdfurl = link.href
                 else:
                     continue
 
@@ -150,7 +146,6 @@ class Arxiv_API:
                     pass
 
                 datalist.append(self.addParams(entry, pdfurl, ids, filepath))
-                count += 1
 
         return datalist
 
