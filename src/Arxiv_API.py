@@ -3,7 +3,10 @@ import pandas as pd
 import time, random
 import json, os
 from Document import Document
+from dotenv import load_dotenv
 
+load_dotenv()
+rootdir=os.getenv("rootdir")
 
 class Arxiv_API:
     def __init__(
@@ -16,10 +19,10 @@ class Arxiv_API:
         downloadstuff=False,
     ):
         self.base_url = "http://export.arxiv.org/api/query?"
-        self.file_dir = ['../SampleData/' + subj for subj in search]
+        self.file_dir = [rootdir+'/SampleData/' + subj for subj in search]
 
-        if search != "":
-            self.query = ["search_query=%s&start=%i&max_results=%i" % (subj+"*", start, max_results) for subj in search]
+        if search != []:
+            self.query = ["search_query=cat:%s&start=%i&max_results=%i" % (subj+"*", start, max_results) for subj in search]
         else:
             print("Must provide a search item.")
 
@@ -94,7 +97,7 @@ class Arxiv_API:
             self.df = pd.DataFrame([i for i in self.data], columns=dataCol)
 
             jfile = self.df.to_dict()
-            with open(f"../SampleData/metadata.json", "w") as outfile:
+            with open(f"{rootdir}/SampleData/metadata.json", "w") as outfile:
                 json.dump(jfile, outfile)
 
     def DownloadResult(
@@ -118,8 +121,8 @@ class Arxiv_API:
                     continue
 
                 filename = "Article_%s" % ids + ".pdf"
-                filepath = f"{self.file_dir}/{filename}"
-
+                filepath = f"{self.file_dir[j]}/{filename}"
+                
                 if not os.path.isfile(filepath):  # check if the pdf exists
                     logging.info(
                         "Downloading pdf from metadata list %i article %i ---------"
