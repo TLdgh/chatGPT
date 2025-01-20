@@ -15,9 +15,11 @@ class Arxiv_API:
         start_date="2001-01-01",
         end_date="2023-07-01",
         start=0,
+        sampling_unit_size=50,
         max_results=3,
         downloadstuff=False,
     ):
+        self.sampling_unit_size=sampling_unit_size
         self.base_url = "http://export.arxiv.org/api/query?"
         self.file_dir = [rootdir+'/SampleData/' + subj for subj in search]
 
@@ -105,7 +107,8 @@ class Arxiv_API:
     ):  # download pdf if it exists in arxiv and if we don't have it
         # initiate empty data consisting of list variables
         datalist = []
-
+        count=0
+        
         # Run through each entry (article) in each metadata, and print out information
         for i, entry in enumerate(datachunk.entries):
             logging.info("Generating e-print metadata for Article " + str(entry.id))
@@ -137,10 +140,11 @@ class Arxiv_API:
                     if res.status_code == 200:
                         with open(filepath, "wb") as f:
                             f.write(res.content)
-                            logging.info("PDF file download --- Complete")
-                            timeout = random.randrange(15, 25, 1)
-                            logging.info("System sleep: " + str(timeout) + " seconds")
-                            time.sleep(timeout)
+                        logging.info("PDF file download --- Complete")
+                        timeout = random.randrange(15, 25, 1)
+                        logging.info("System sleep: " + str(timeout) + " seconds")
+                        time.sleep(timeout)
+                        count+=1
                     else:
                         logging.info(
                             "Failed to download pdf from metadata list %i article %i."
@@ -151,10 +155,12 @@ class Arxiv_API:
                     logging.info(
                         "PDF from metadata list %i article %i already exists." % (j, i)
                     )
-                    pass
+                    count+=1
 
                 datalist.append(self.addParams(entry, pdfurl, ids, filepath))
-
+            
+            if count==self.sampling_unit_size: break
+            
         return datalist
 
     def addParams(
