@@ -4,6 +4,9 @@ import time, random
 import json, os
 from Document import Document
 from dotenv import load_dotenv
+from urllib.parse import parse_qs
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 load_dotenv()
 rootdir=os.getenv("rootdir")
@@ -19,12 +22,13 @@ class Arxiv_API:
         max_results=3,
         downloadstuff=False,
     ):
+        self.search=search
         self.sampling_unit_size=sampling_unit_size
         self.base_url = "http://export.arxiv.org/api/query?"
-        self.file_dir = [rootdir+'/SampleData/' + subj for subj in search]
+        self.file_dir = [rootdir+'/SampleData/' + subj for subj in self.search]
 
-        if search != []:
-            self.query = ["search_query=cat:%s&start=%i&max_results=%i" % (subj+"*", start, max_results) for subj in search]
+        if self.search != []:
+            self.query = ["search_query=cat:%s&start=%i&max_results=%i" % (subj+"*", start, max_results) for subj in self.search]
         else:
             print("Must provide a search item.")
 
@@ -92,7 +96,11 @@ class Arxiv_API:
             )
 
             if downloadstuff:
-                self.data += self.DownloadResult(self.metadata[j], j)
+                parsed_query = parse_qs(self.query[j])
+                search_query = parsed_query.get('search_query', [''])[0]  # Get the 'search_query' parameter
+                true_category = search_query.split(':')[1].replace("*","") if ':' in search_query else None  # Extract cat part in search
+
+                self.data += self.DownloadResult(self.metadata[j], j, true_category)
                 time.sleep(15)
 
         if downloadstuff:
@@ -103,7 +111,7 @@ class Arxiv_API:
                 json.dump(jfile, outfile)
 
     def DownloadResult(
-        self, datachunk, j
+        self, datachunk, j: int, true_category: str
     ):  # download pdf if it exists in arxiv and if we don't have it
         # initiate empty data consisting of list variables
         datalist = []
@@ -111,6 +119,8 @@ class Arxiv_API:
         
         # Run through each entry (article) in each metadata, and print out information
         for i, entry in enumerate(datachunk.entries):
+            primcat=entry.tags[0]["term"]
+            
             logging.info("Generating e-print metadata for Article " + str(entry.id))
 
             # get the link and download pdf
@@ -130,32 +140,41 @@ class Arxiv_API:
                 filename = "Article_%s" % ids + ".pdf"
                 filepath = f"{self.file_dir[j]}/{filename}"
                 
-                if not os.path.isfile(filepath):  # check if the pdf exists
-                    logging.info(
-                        "Downloading pdf from metadata list %i article %i ---------"
-                        % (j, i)
-                    )
-
-                    res = requests.get(pdfurl)
-                    if res.status_code == 200:
-                        with open(filepath, "wb") as f:
-                            f.write(res.content)
-                        logging.info("PDF file download --- Complete")
-                        timeout = random.randrange(15, 25, 1)
-                        logging.info("System sleep: " + str(timeout) + " seconds")
-                        time.sleep(timeout)
-                        count+=1
+                if true_category not in primcat:
+                    if os.path.isfile(filepath):    
+                        os.remove(filepath)
+                        logging.info("PDF doesn't belong to the correct category. Deleted.")
+                        continue
                     else:
+                        continue
+                    
+                else:
+                    if not os.path.isfile(filepath):  # check if the pdf exists
                         logging.info(
-                            "Failed to download pdf from metadata list %i article %i."
+                            "Downloading pdf from metadata list %i article %i ---------"
                             % (j, i)
                         )
-                        continue
-                else:
-                    logging.info(
-                        "PDF from metadata list %i article %i already exists." % (j, i)
-                    )
-                    count+=1
+
+                        res = requests.get(pdfurl)
+                        if res.status_code == 200:
+                            with open(filepath, "wb") as f:
+                                f.write(res.content)
+                            logging.info("PDF file download --- Complete")
+                            timeout = random.randrange(15, 25, 1)
+                            logging.info("System sleep: " + str(timeout) + " seconds")
+                            time.sleep(timeout)
+                            count+=1
+                        else:
+                            logging.info(
+                                "Failed to download pdf from metadata list %i article %i."
+                                % (j, i)
+                            )
+                            continue
+                    else:
+                            logging.info(
+                                "PDF from metadata list %i article %i already exists." % (j, i)
+                            )
+                            count+=1
 
                 datalist.append(self.addParams(entry, pdfurl, ids, filepath))
             

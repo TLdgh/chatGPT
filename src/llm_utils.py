@@ -5,7 +5,7 @@ import numpy as np
 import pypdf
 import google.generativeai as genai
 from google.api_core.exceptions import GoogleAPICallError
-
+from ollama import chat, ps, ChatResponse, ProcessResponse, ResponseError
 
 
 def extract_text_from_pdf(file_path):
@@ -103,7 +103,16 @@ def get_gemini_response(user_prompt, api_key):
         return f"Google API Error: {e}"
     except Exception as e:
         return f"An unexpected error occurred: {e}"
-        
 
 
 
+# Llama 3.1
+def get_llama_response(user_prompt):
+    try:
+        response: ChatResponse = chat(model='llama3.1', 
+                        messages=[{'role': 'user',
+                                   'content': user_prompt,},],
+                        options={'temperature': 0})
+        return response.message.content # access fields directly from the response object
+    except ResponseError as e:
+        print('Error:', e.error)
