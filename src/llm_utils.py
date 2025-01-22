@@ -1,11 +1,8 @@
-import os
-import openai
-import pandas as pd
-import numpy as np
-import pypdf
-import google.generativeai as genai
+import os, openai, pypdf, pandas as pd, numpy as np, google.generativeai as genai, typing_extensions as typing
 from google.api_core.exceptions import GoogleAPICallError
 from ollama import chat, ps, ChatResponse, ProcessResponse, ResponseError
+from pydantic import BaseModel
+
 
 
 def extract_text_from_pdf(file_path):
@@ -87,7 +84,11 @@ def get_tokens_between_indices(text, engine, max_tokens):
 
 
 # Google Gemini
-def get_gemini_response(user_prompt, api_key):
+class GeminiSchema(typing.TypedDict):
+        Title: str
+        Authors: list[str]
+
+def get_gemini_response(user_prompt, api_key)-> str:
     try:
         # Configure the API key
         genai.configure(api_key=api_key)
@@ -96,7 +97,10 @@ def get_gemini_response(user_prompt, api_key):
         model = genai.GenerativeModel("gemini-1.5-flash")
 
         # Generate text
-        response = model.generate_content(contents=user_prompt)
+        response = model.generate_content(contents=user_prompt,
+                                          generation_config=genai.GenerationConfig(response_mime_type="application/json", response_schema=list[GeminiSchema]),
+                                          )
+        #print(response)
         return response.text
     
     except GoogleAPICallError as e:
@@ -107,12 +111,18 @@ def get_gemini_response(user_prompt, api_key):
 
 
 # Llama 3.1
-def get_llama_response(user_prompt):
+class LlamaSchema(BaseModel):
+    Title: str
+    Authors: list[str]
+
+def get_llama_response(user_prompt) -> str:
     try:
         response: ChatResponse = chat(model='llama3.1', 
                         messages=[{'role': 'user',
                                    'content': user_prompt,},],
-                        options={'temperature': 0})
+                        options={'temperature': 0.7}, format=LlamaSchema.model_json_schema(),)
+        ans = LlamaSchema.model_validate_json(response.message.content)
+        #print(ans)
         return response.message.content # access fields directly from the response object
     except ResponseError as e:
         print('Error:', e.error)
