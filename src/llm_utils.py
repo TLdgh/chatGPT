@@ -144,11 +144,13 @@ class TitleAuthorExperiment():
         # initialize attributes of an instance
         self.user_prompt=user_prompt
         self.keys=keys
-        self.resultpath={"LlamaResult":os.path.join(self.keys['rootdir'], "results", "llama_results2.json"),
-                         "GeminiResult":os.path.join(self.keys['rootdir'], "results", "gemini_results2.json")}
+        self.resultpath={"LlamaResults":os.path.join(self.keys['rootdir'], "results", "llama_results.json"),
+                         "GeminiResults":os.path.join(self.keys['rootdir'], "results", "gemini_results.json"),
+                         "AllResults":os.path.join(self.keys['rootdir'], "results", "all_results.json")}
         self.llama_results=[]
         self.gemini_results=[]
-    
+        self.all_results = []
+        
     # methods of an instance
     def clean_text(self, text):
         # Remove invalid or non-printable characters, but keep Unicode printable ones
@@ -158,6 +160,12 @@ class TitleAuthorExperiment():
             input_max_tokens = 1000
             raw_text = self.user_prompt.format(row['Content'][0:input_max_tokens])
             return raw_text
+
+    def saveAsJSON(self, file_path, new_data):
+        with open(file_path, 'w') as f:
+            json.dump(new_data, f, indent=4)
+
+
 
     def GetTitleAuthor_gpt(self, metadata):
         engine="gpt-3.5-turbo"
@@ -202,13 +210,18 @@ class TitleAuthorExperiment():
             result=json.loads(self.clean_text(result))[0] #this is the dictionary in the json response
             true_res=metadata.iloc[i,][['ID','Primary_Cat','Title','Authors']].rename({'Title': 'TrueTitle', 'Authors': 'TrueAuthors'}).to_dict()
             result.update(true_res)
+            result.update(dict(Model='Gemini'))
             self.gemini_results.append(result)
+            self.all_results.append(result)
             time.sleep(10) 
         
+        self.saveAsJSON(file_path=self.resultpath['AllResults'], new_data=self.all_results)
+        
+        '''
         # After all rows are processed, write the accumulated results
-        with open(self.resultpath['GeminiResult'], 'w') as f:
+        with open(self.resultpath['GeminiResults'], 'w') as f:
             json.dump(self.gemini_results, f)
-
+        '''
 
 
     def GetTitleAuthor_llama(self, metadata: pd.DataFrame,):
@@ -219,12 +232,18 @@ class TitleAuthorExperiment():
             result=json.loads(self.clean_text(result))
             true_res=metadata.iloc[i,][['ID','Primary_Cat','Title','Authors']].rename({'Title': 'TrueTitle', 'Authors': 'TrueAuthors'}).to_dict()
             result.update(true_res)
+            result.update(dict(Model='Llama'))
             #print(result)
             self.llama_results.append(result)
+            self.all_results.append(result)
 
+        self.saveAsJSON(file_path=self.resultpath['AllResults'], new_data=self.all_results)
+
+        '''
         # After all rows are processed, write the accumulated results
-        with open(self.resultpath['LlamaResult'], 'w') as f:
+        with open(self.resultpath['LlamaResults'], 'w') as f:
             json.dump(self.llama_results, f)
+        '''
 
-
+    
 
