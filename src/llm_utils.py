@@ -1,7 +1,17 @@
-import os, openai, pypdf, pandas as pd, numpy as np, google.generativeai as genai, typing_extensions as typing
+import os, re, time, json, openai, pypdf, logging
+import pandas as pd, numpy as np, google.generativeai as genai, typing_extensions as typing
 from google.api_core.exceptions import GoogleAPICallError
 from ollama import chat, ps, ChatResponse, ProcessResponse, ResponseError
 from pydantic import BaseModel
+from tqdm import tqdm
+
+# Configure logging to write to a file
+logging.basicConfig(
+    filename='./logs/ollama_logs.txt',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s\n',
+    filemode='w'
+)
 
 
 
@@ -126,3 +136,95 @@ def get_llama_response(user_prompt) -> str:
         return response.message.content # access fields directly from the response object
     except ResponseError as e:
         print('Error:', e.error)
+
+
+
+class TitleAuthorExperiment():
+    def __init__(self, user_prompt: str, keys: dict,):
+        # initialize attributes of an instance
+        self.user_prompt=user_prompt
+        self.keys=keys
+        self.resultpath={"LlamaResult":os.path.join(self.keys['rootdir'], "results", "llama_results2.json"),
+                         "GeminiResult":os.path.join(self.keys['rootdir'], "results", "gemini_results2.json")}
+        self.llama_results=[]
+        self.gemini_results=[]
+    
+    # methods of an instance
+    def clean_text(self, text):
+        # Remove invalid or non-printable characters, but keep Unicode printable ones
+        return re.sub(r'[^\x20-\x7E\xA0-\uFFFF]', '', text)
+
+    def getEachRes(self,row):
+            input_max_tokens = 1000
+            raw_text = self.user_prompt.format(row['Content'][0:input_max_tokens])
+            return raw_text
+
+    def GetTitleAuthor_gpt(self, metadata):
+        engine="gpt-3.5-turbo"
+        system_prompt = "Please extract the title and author names:"
+        system_prompt_tokens = count_tokens(text=system_prompt, engine=engine)
+
+        def getEachRes(row):
+            input_max_tokens = 100
+
+            raw_text = row['Content']
+            user_prompt = get_tokens_between_indices(
+                text=raw_text, 
+                engine=engine, 
+                max_tokens=input_max_tokens)
+            print(user_prompt)
+            
+            response=get_gpt_response(user_prompt=user_prompt, 
+                                                system_prompt=system_prompt,
+                                                engine=engine,
+                                                max_completion=500)
+            print("ChatGPT Response:", response)
+            return response
+
+        results = []
+        for i in tqdm(range(len(metadata)), desc="Processing rows"):
+            row = metadata.iloc[i]
+            result = getEachRes(row)
+            results.append(result)
+
+        # After all rows are processed, write the accumulated results
+        with open("all_results.json", 'w') as f:
+            json.dump(results, f)
+
+
+
+    def GetTitleAuthor_gemini(self, metadata: pd.DataFrame,):
+        for i in tqdm(range(len(metadata)), desc="Processing rows"):
+            row = metadata.iloc[i]
+            raw_text = self.getEachRes(row)
+            result=get_gemini_response(user_prompt=raw_text, api_key=self.keys['gemini_key'])
+            #print(result)
+            result=json.loads(self.clean_text(result))[0] #this is the dictionary in the json response
+            true_res=metadata.iloc[i,][['ID','Primary_Cat','Title','Authors']].rename({'Title': 'TrueTitle', 'Authors': 'TrueAuthors'}).to_dict()
+            result.update(true_res)
+            self.gemini_results.append(result)
+            time.sleep(10) 
+        
+        # After all rows are processed, write the accumulated results
+        with open(self.resultpath['GeminiResult'], 'w') as f:
+            json.dump(self.gemini_results, f)
+
+
+
+    def GetTitleAuthor_llama(self, metadata: pd.DataFrame,):
+        for i in tqdm(range(len(metadata)), desc="Processing rows"):
+            row = metadata.iloc[i]
+            raw_text = self.getEachRes(row)
+            result=get_llama_response(user_prompt=raw_text)
+            result=json.loads(self.clean_text(result))
+            true_res=metadata.iloc[i,][['ID','Primary_Cat','Title','Authors']].rename({'Title': 'TrueTitle', 'Authors': 'TrueAuthors'}).to_dict()
+            result.update(true_res)
+            #print(result)
+            self.llama_results.append(result)
+
+        # After all rows are processed, write the accumulated results
+        with open(self.resultpath['LlamaResult'], 'w') as f:
+            json.dump(self.llama_results, f)
+
+
+
