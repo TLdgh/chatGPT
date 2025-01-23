@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 # Configure logging to write to a file
 logging.basicConfig(
-    filename='./logs/ollama_logs.txt',
+    filename='../logs/ollama_logs.txt',
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s\n',
     filemode='w'
