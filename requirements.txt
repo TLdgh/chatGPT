@@ -1,7 +1,9 @@
 azure-storage-blob
 pandas
 numpy
-pypdf
+pymupdf
+pytesseract
+pillow
 tqdm
 ipykernel
 feedparser
@@ -11,3 +13,5 @@ pyodbc
 python-dotenv
 google-generativeai
 openai
+ollama
+pydantic

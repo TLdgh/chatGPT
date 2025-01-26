@@ -5,6 +5,7 @@ import json, os
 from Document import Document
 from dotenv import load_dotenv
 from urllib.parse import parse_qs
+from tqdm import tqdm
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -57,51 +58,53 @@ class Arxiv_API:
             "PDF_link",
             "file_path",
         ]
+        total_niter=len(self.query)*200
+        
+        with tqdm(total=total_niter, desc="Processing") as pbar:
+            for j in range(len(self.query)):
+                # perfom a request using the base_url and query. This gives Atom code
+                queries=requests.get(self.base_url + self.query[j])
+                self.response[j] = queries.content
 
-        for j in range(len(self.query)):
-            # perfom a request using the base_url and query. This gives Atom code
-            queries=requests.get(self.base_url + self.query[j])
-            self.response[j] = queries.content
+                # parse the response
+                self.metadata[j] = feedparser.parse(self.response[j])
 
-            # parse the response
-            self.metadata[j] = feedparser.parse(self.response[j])
+                # print feed information
+                logging.info(
+                    "Feed title of metadata " + str(j) + ": " + self.metadata[j].feed.title
+                )
+                logging.info(
+                    "Feed last update of metadata "
+                    + str(j)
+                    + ": "
+                    + self.metadata[j].feed.updated
+                )
+                logging.info(
+                    "totalResults for query "
+                    + str(j)
+                    + ": "
+                    + self.metadata[j].feed.opensearch_totalresults
+                )
+                logging.info(
+                    "totalResults for query "
+                    + str(j)
+                    + ": "
+                    + self.metadata[j].feed.opensearch_itemsperpage
+                )
+                logging.info(
+                    "totalResults for query "
+                    + str(j)
+                    + ": "
+                    + self.metadata[j].feed.opensearch_startindex
+                )
 
-            # print feed information
-            logging.info(
-                "Feed title of metadata " + str(j) + ": " + self.metadata[j].feed.title
-            )
-            logging.info(
-                "Feed last update of metadata "
-                + str(j)
-                + ": "
-                + self.metadata[j].feed.updated
-            )
-            logging.info(
-                "totalResults for query "
-                + str(j)
-                + ": "
-                + self.metadata[j].feed.opensearch_totalresults
-            )
-            logging.info(
-                "totalResults for query "
-                + str(j)
-                + ": "
-                + self.metadata[j].feed.opensearch_itemsperpage
-            )
-            logging.info(
-                "totalResults for query "
-                + str(j)
-                + ": "
-                + self.metadata[j].feed.opensearch_startindex
-            )
+                if downloadstuff:
+                    parsed_query = parse_qs(self.query[j])
+                    search_query = parsed_query.get('search_query', [''])[0]  # Get the 'search_query' parameter
+                    true_category = search_query.split(':')[1].replace("*","") if ':' in search_query else None  # Extract cat part in search
 
-            if downloadstuff:
-                parsed_query = parse_qs(self.query[j])
-                search_query = parsed_query.get('search_query', [''])[0]  # Get the 'search_query' parameter
-                true_category = search_query.split(':')[1].replace("*","") if ':' in search_query else None  # Extract cat part in search
-
-                self.data += self.DownloadResult(self.metadata[j], j, true_category)
-                time.sleep(15)
+                    self.data += self.DownloadResult(self.metadata[j], j, true_category, pbar)
+                    time.sleep(15)
 
         if downloadstuff:
             self.df = pd.DataFrame([i for i in self.data], columns=dataCol)
@@ -111,7 +114,7 @@ class Arxiv_API:
                 json.dump(jfile, outfile)
 
     def DownloadResult(
-        self, datachunk, j: int, true_category: str
+        self, datachunk, j: int, true_category: str, pbar: tqdm
     ):  # download pdf if it exists in arxiv and if we don't have it
         # initiate empty data consisting of list variables
         datalist = []
@@ -177,6 +180,7 @@ class Arxiv_API:
                             count+=1
 
                 datalist.append(self.addParams(entry, pdfurl, ids, filepath))
+                pbar.update(1)
             
             if count==self.sampling_unit_size: break
             
@@ -190,7 +194,7 @@ class Arxiv_API:
         file_path = filepath
 
         try:
-            Content = Document(path=file_path).text
+            Content = Document(path=file_path, startPage=0, endPage=1).text
         except AttributeError:
             Content = "No Content"
 

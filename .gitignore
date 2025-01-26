@@ -14,3 +14,8 @@ results
 
 # log files
 *logs
+.Rproj.user
+
+# project file
+*.Rproj
+*.Rhistory

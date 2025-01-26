@@ -1,5 +1,8 @@
-from PyPDF2 import PdfReader 
+import fitz
+from PIL import Image
+import pytesseract
 
+pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
 
 class Document:
     def __init__(self, path="", startPage=None, endPage=None):
@@ -11,38 +14,21 @@ class Document:
         text = ""
 
         if str(path).endswith("pdf"):
-            pdfFileObj = open(path, "rb")
-            reader = PdfReader(pdfFileObj)
-            numPages = len(reader.pages)
+            pdfDoc = fitz.open(path)
+            numPages = pdfDoc.page_count
 
-            # check if start and end page are specified. If not read the whole pdf
-            if (self.startPage == None) or (type(self.startPage) != type(0)):
-                startPage = 0
-            else:
-                startPage = self.startPage
+            startPage = self.startPage if isinstance(self.startPage, int) else 0
+            endPage = self.endPage if isinstance(self.endPage, int) and self.endPage <= numPages else numPages
 
-            if (
-                (self.endPage == None)
-                or (self.endPage > numPages)
-                or (type(self.endPage) != type(0))
-            ):
-                endPage = numPages
-            else:
-                endPage = self.endPage
-
-            if (
-                startPage < 0
-                or endPage > numPages
-                or startPage > numPages
-                or startPage > endPage
-            ):
+            if startPage < 0 or endPage > numPages or startPage >= endPage:
                 raise ValueError("Invalid page specification.")
 
             for i in range(startPage, endPage):
-                pageObj = reader.pages[i]
-                text += pageObj.extract_text()  # extract the text of the page
-            pdfFileObj.close()
-        else:
-            pass
+                page = pdfDoc[i]
+                pix = page.get_pixmap(dpi=300)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                text += pytesseract.image_to_string(img) + "\n"
 
-        self.text = text
+            pdfDoc.close()
+
+        self.text = text.strip()

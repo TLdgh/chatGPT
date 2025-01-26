@@ -1,4 +1,4 @@
-import os, re, time, json, openai, pypdf, logging
+import os, re, time, json, openai, fitz, logging
 import pandas as pd, numpy as np, google.generativeai as genai, typing_extensions as typing
 from google.api_core.exceptions import GoogleAPICallError
 from ollama import chat, ps, ChatResponse, ProcessResponse, ResponseError
@@ -17,10 +17,16 @@ logging.basicConfig(
 
 def extract_text_from_pdf(file_path):
     try:
-        reader = pypdf.PdfReader(file_path)
+        # Open the PDF file
+        reader = fitz.open(file_path)
         text = ""
-        for page in reader.pages:
-            text += page.extract_text()
+
+        # Iterate over each page in the document
+        for page_num in range(reader.page_count):
+            page = reader[page_num]  # Access the page
+            text += page.get_text()  # Extract text from the page
+        reader.close()
+
         return text
     except Exception as e:
         print(f"Error encountered while opening or processing {file_path}: {e}")
@@ -149,7 +155,12 @@ class TitleAuthorExperiment():
                          "AllResults":os.path.join(self.keys['rootdir'], "results", "all_results.json")}
         self.llama_results=[]
         self.gemini_results=[]
-        self.all_results = []
+        
+        if os.path.exists(self.resultpath['AllResults']):
+            with open(self.resultpath['AllResults']) as outfile:
+                self.all_results=json.load(outfile)
+        else:
+            self.all_results = []
         
     # methods of an instance
     def clean_text(self, text):
@@ -164,6 +175,24 @@ class TitleAuthorExperiment():
     def saveAsJSON(self, file_path, new_data):
         with open(file_path, 'w') as f:
             json.dump(new_data, f, indent=4)
+
+    def checkWhichRow(self, metadata, model):
+        metadata.reset_index(drop=True, inplace=True)
+        
+        if self.all_results==[]:
+            last = 0
+        else:
+            lastdict=self.all_results[-1]
+            last=metadata.index[(metadata['ID']==lastdict['ID']) & 
+                                (metadata['Primary_Cat']==lastdict['Primary_Cat']) & 
+                                (model==lastdict['Model'])]
+            
+            if last.empty:
+                last=0
+            else:
+                last=int(last.item())+1
+            
+        return last
 
 
 
@@ -202,7 +231,9 @@ class TitleAuthorExperiment():
 
 
     def GetTitleAuthor_gemini(self, metadata: pd.DataFrame,):
-        for i in tqdm(range(len(metadata)), desc="Processing rows"):
+        last=self.checkWhichRow(metadata=metadata, model="Llama")
+        
+        for i in tqdm(range(last, len(metadata)), desc="Processing rows"):
             row = metadata.iloc[i]
             raw_text = self.getEachRes(row)
             result=get_gemini_response(user_prompt=raw_text, api_key=self.keys['gemini_key'])
@@ -225,7 +256,9 @@ class TitleAuthorExperiment():
 
 
     def GetTitleAuthor_llama(self, metadata: pd.DataFrame,):
-        for i in tqdm(range(len(metadata)), desc="Processing rows"):
+        last=self.checkWhichRow(metadata=metadata, model="Llama")
+        
+        for i in tqdm(range(last, len(metadata)), desc="Processing rows"):
             row = metadata.iloc[i]
             raw_text = self.getEachRes(row)
             result=get_llama_response(user_prompt=raw_text)
