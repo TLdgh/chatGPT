@@ -1,0 +1,237 @@
+---
+title: "LLMExperiment"
+author: "Teng Li"
+date: "2025-01-23"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(shiny)
+library(plotly)
+library(tidyverse)
+library(here)
+source(here("LLMexp", "Codespace.R"))
+
+exp_results=read.csv(here("results", "exp_results.csv"), header = TRUE)%>%rename(Index=X)
+exp_results[which(is.na(exp_results$Title)),'Title']<-"['NA']"
+exp_results=exp_results%>%mutate(ResponseAuth = Authors==TrueAuthors, ResponseTitle = Title==TrueTitle)
+assign("exp_results", exp_results, envir = .GlobalEnv)
+
+```
+
+```{r app-embed, echo=FALSE}
+shinyAppDir(
+  here("LLMexp"),
+  options = list(
+    width = "100%", height = 550
+  )
+)
+```
+
+```{r}
+countdata<-exp_results%>%
+      transmute(Model=factor(Model),Primary_Cat=factor(Primary_Cat),ResponseAuth,ResponseTitle)%>%
+      group_by(Model,Primary_Cat)%>%
+      summarise(CountAuth=sum(ResponseAuth), CountTitle=sum(ResponseTitle), .groups = 'drop')
+str(countdata)
+print(countdata)
+```
+
+#
+The model is:
+$$
+y_{ij} = \mu +\tau_i + \beta_j + \epsilon_{ij}, \quad i=1,2,...,a, \quad j=1,2,...,b
+$$
+where a is the number of treament levels and b is the number of blocks. In this experiment, a=2 and b=8.
+
+Let $\mu_i=\mu +\tau=\frac{\sum_{j=1}^b (\mu +\tau_i + \beta_j)}{b}$, the hypothesis of interest is:
+
+$$
+H_0: \mu_1=\mu_2\\
+H_1: \mu_1 \neq \mu_2
+$$
+
+
+
+
+
+
+
+
+```{r}
+fit1=lm(CountAuth~Model+Primary_Cat, data = countdata)
+summary(fit1)
+anova(fit1)
+```
+
+```{r}
+fit2=lm(CountAuth~Model, data = countdata)
+anova(fit2)
+```
+
+Note the significance of increase in the error sum of squares, SSE. This suggests that blocking can reduce residual errors given the appropriate design.
+
+```{r}
+plot_ly(countdata, x=~Primary_Cat, y=~CountAuth, color = ~Model, type = 'scatter', mode="markers")
+```
+
+
+```{r}
+qqnorm(fit1$residuals, datax = FALSE)
+qqline(fit1$residuals, datax = FALSE, lwd=3)
+```
+
+
+
+# Bayesian Analysis
+
+The most intuitive question one can address is on the success rate of the model in generating the correct answer to the prompt. We are able to measure this probability by comparing the output with the truth data. We draw random samples of articles with their truth data from kaggle and run the LLM on each article independently. We then use various distance measures to qunatify the similarity between the output and the truth data. We finally put a threshold level to the results such that if the measurement outcome deviates from this threshold, then we consider the model failed at generating correct outputs. Therefore it is important to know what the threshold should be. The most restrictive threshold will be zero, showing that there is no difference between the outcome and the truth. This is reasonable for research question 1 and 2, however not a good approach for research question 3 because the summary output from the model will most likely have some difference compared to the original abstract of the article. For research question 3, one can choose an reasonable threshold for analysis, but the best approach should be based on the interpretation of a human after having read the summary output from the model and compared it with the abstract.
+
+Once the appropriate measurement strategy is determined, one can conclude whether the model has successfully generated the correct answer to the prompt or not. The result forms a random sample of Bernoulli trials. Suppose $X_1,...,X_n$ are the random sample of the experimental result for a large language model. The Bernoulli random variables have a support on $\{0, 1\}$, with $X_i=1$ if the model generates a correct answer to the prompt with probability $p$, otherwise $X_i=0$ with probability $1-p$. The success rate $p$ is the parameter of the Bernoulli distribution. Our goal is therefore to estimate this success probabilty and compare it between different models.
+
+
+We can have various hypothesis tests on the success probability $p$. One may consider a right-tailed hypothesis:
+
+$$
+H_0: ~ p \leq p_0 \\
+H_1: ~ p> p_0
+$$
+
+such that we would like to know if the success probability is greater than certain value $p_0$. One may also consider a two-sample hypothesis test:
+$$
+H_0: ~ p_1 \leq p_2 \\
+H_1: ~ p_1 > p_2
+$$
+
+such that we would like to know if the success probability of model 1 $p_1$ is greater than the one of model 2 $p_2$. Note that since $p$ is a real number between 0 and 1, it is not informative to havae a two-sided test $H_0: ~ p=0$ VS $H_a: p \neq 0$, so we omit such test.
+
+A general test statistic one can find in most of Statistics textbooks is the normal approximation to the binomial distribution. We can use the likelihood ratio to derive the test statistic for our composite hypothesis:
+$$
+\Lambda(\vec{x})=\frac{\sup_{p \leq p_0} p_0^{\sum_{i=1}^{n} x_i} (1-p_0)^{n-\sum_{i=1}^{n} x_i} }{\sup_{p \in \Theta}  p^{\sum_{i=1}^{n} x_i} (1-p)^{n-\sum_{i=1}^{n} x_i}}
+$$
+
+The maximum likelihood estimator (MLE) of $p$ is $\hat{p}=\frac{1}{n}\sum_{i=1}^{n} x_i$, so $\sum_{i=1}^{n} x_i = n\hat{p}$. The LRT statistic becomes:
+$$
+\Lambda(\vec{x})=
+\begin{cases}
+1 & p_0 \geq \frac{y}{n}\\
+\frac{(p_0)^{n\hat{p}} \cdot (1-p_0)^{n(1-\hat{p})} }{(\hat{p})^{n\hat{p}} \cdot (1-\hat{p})^{n(1-\hat{p})}} & p_0 < \frac{y}{n}
+\end{cases}
+$$
+
+Let $g(\vec{x}):=-\ln{\Lambda(\vec{x})} = n\hat{p}(\ln{\hat{p}}-\ln{p_0})+n(1-\hat{p})(\ln{(1-\hat{p})} - \ln{(1-p_0)})$.
+
+By Taylor's expansion, $\ln{(1-\hat{p})} - \ln{(1-p_0)} \approx - \frac{\hat{p}-p_0}{1-p_0}$, $\ln{\hat{p}} - \ln{p_0} \approx \frac{\hat{p}-p_0}{p_0}$. Therefore,
+$$
+g(\vec{x}) = n(\hat{p}-p_0)\left( \frac{\hat{p}-p_0}{p_0(1-p_0)} \right) = \frac{(\hat{p}-p_0)^2}{p_0(1-p_0)/n}.
+$$
+
+By Central Limit Theorem, $T(\vec{x}):=\frac{\hat{p}-p_0}{\sqrt{p_0(1-p_0)/n}}$ is Normal(0,1) distributed. Thus we have that
+$$
+\Lambda(\vec{x}) < \lambda_0 \equiv T(\vec{x}) > \lambda_0
+$$
+
+Our hypothesis test is
+$$
+\phi(\vec{x}) = 
+\begin{cases}
+1, \quad T(\vec{x}) > \lambda_0\\
+0, \quad T(\vec{x}) \leq \lambda_0
+\end{cases}
+$$
+
+Using the pivotal quantity $Q(\vec{x}, p):=\frac{\hat{p}-p}{\sqrt{p(1-p)/n}}$ we can get the ($1-\alpha$)-level confidence interval for the success rate as $[L(\vec{X}), R(\vec{X})]$ such that:
+$$
+\mathbb{P}(p \in [L(\vec{X}), R(\vec{X})])\geq 1-\alpha
+$$
+
+The interpretation of the confidence interval is important. In a frequentist point of view, our unknown parameter $p$ is a true but fixed value. The confidence interval on the other hand is a random set, thus it is incorrect to state that we are 99% sure that the confidence interval covers the unknown true paramter. It is also incorrect to say that the unknown parameter falls within the confidence interval 99% of the time, because in this statement the unknown parameter is falsely treated as a random variable. Therefore the appropriate interpretation of the confidence interval is: when the experiment is repeated many times to generate random samples and their perspective confidence intervals, 99% of these confidence intervals will cover the unknown fixed parameter.
+
+Alternatively, we can use the Bayesian approach to gain a different understanding of our unknown parameter and to draw inference on it. Assuming we have a prior knowledge of this success rate, say 80%, before observing the data. The Baysian approach allows us to "correct" our degree of beliefs based on the actual observation. In particular, the Bayes' Theorem says that 
+$$
+P(A|B) = \frac{P(A) \cdot P(B|A)}{P(B)}
+$$
+where $P(A)$ is the prior probability reflecting our prior belief and $P(A|B)$ is the posterior probability after having observed the event B. Such analysis allows us to make an inference on the success rate in a very different point of view, which we will explain later.
+
+Suppose we assume $Beta(\alpha, \beta)$ is the prior distribution of the success rate p. The prior density function is:
+$$
+f(p; \alpha,\beta) = \frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)} p^{\alpha-1} (1-p)^{\beta-1}, ~ p\in (0,1)
+$$
+We know the expectation and the variance of Beta distribution as:
+$$
+\begin{gather*}
+E(p)= \frac{\alpha}{\alpha+\beta}\\
+Var(p)= \frac{\alpha \beta}{(\alpha+\beta)^2(\alpha+\beta+1)}
+\end{gather*}
+$$
+Thus if we assume that the average success rate is $t_1$ with a variance of $t_2$, then we can solve for the parameters of the prior distribution as 
+$$
+\alpha = - \frac{t_1}{t_2}\cdot (t_1^2-t_1+t_2), \quad \beta=\alpha \cdot \frac{1-t_1}{t_1}.
+$$ 
+
+Since the random sample $X_1,...,X_n$ follows Bernoulli(p) distribution, we have a conjugate pair of the prior and posterior distributions:
+$$
+\begin{align*}
+f(p|\vec{x})&=\frac{f(p)f(\vec{x}|p)}{\int_0^1 f(p)f(\vec{x}|p) dp}=\frac{\frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)} p^{\alpha-1+\sum_{i=1}^n x_i} (1-p)^{\beta-1+n-\sum_{i=1}^n x_i}}{\int_0^1 \frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)} p^{\alpha-1+\sum_{i=1}^n x_i} (1-p)^{\beta-1+n-\sum_{i=1}^n x_i} dp}=\frac{p^{\alpha-1+\sum_{i=1}^n x_i} (1-p)^{\beta-1+n-\sum_{i=1}^n x_i}}{\frac{\Gamma(\alpha+\sum_{i=1}^n x_i)\Gamma(\beta+n-\sum_{i=1}^n x_i)}{\Gamma(\alpha+\beta+n)}}\\
+&=\frac{\Gamma(\alpha+\beta+n)}{\Gamma(\alpha+\sum_{i=1}^n x_i)\Gamma(\beta+n-\sum_{i=1}^n x_i)} p^{\alpha-1+\sum_{i=1}^n x_i} (1-p)^{\beta-1+n-\sum_{i=1}^n x_i}
+\end{align*}
+$$
+i.e. the posterior distribution is $Beta(\alpha+\sum_{i=1}^n x_i, \beta+n-\sum_{i=1}^n x_i)$ with the mean and variance:
+$$
+\begin{gather*}
+E(p|\vec{x})=\frac{\alpha+\sum_{i=1}^n x_i}{\alpha+\beta+n}\\
+Var(p|\vec{x})=\frac{(\alpha+\sum_{i=1}^n x_i)(\beta+n-\sum_{i=1}^n x_i)}{(\alpha+\beta+n)^2(\alpha+\beta+n+1)}
+\end{gather*}
+$$
+One can see that asymptotically when we have a large sample size n, the mean of the posterior distribution approaches to the maximum likelihood estimator $\hat{p} =\frac{1}{n}\sum_{i=1}^n x_i$. Thus the specification of a prior is less important if the sample size is large.  This allows us to make a subjective assumption of the success rate based on a probability distribution instead of viewing it as a fixed but unknown number in the frequentist hypothesis test. In the case where $\alpha=\beta=1$, we obtain the non-informative prior $Beta(1,1)$, which is $Uniform([0,1])$ distribution. It's called non-informative because we assume that all p are equally probable. In other words, we no longer put a subjective assumption on $p$. 
+
+After having obtained the posterior distribution, we can get the ($1-\alpha$)-level credible interval for the success rate based on the quantile of the posterior as $[L(\vec{x}), R(\vec{x})]$ such that:
+$$
+\mathbb{P}(\bold{p} \in [L(\vec{x}), R(\vec{x})] |\vec{x}) = \int_{L(\vec{x})}^{R(\vec{x})} f(p|\vec{x})dp = 1-\alpha
+$$
+With such definition, it is perfectly fine to interpret the credible interval as: the probability that our success rate falls within the given credible interval is (1-$\alpha$)%. 
+
+Various research papers have shown that the Bayesian Uniform prior yields better estimation of the confidence interval than the one obtained from the normal approximation of the binomial distribution. We can make a simulation to justify this.
+
+One can also test a two-sample hypothesis: $H_0: p1 \leq p2$ VS. $H_1: p1 > p2$ where $p_1$ is the parameter of Model1, and $p_2$ is the parameter of Model2. In the frequentist approach, we often need to specify the significance level $\alpha$, which is the type I error defined by:
+$$
+\alpha = E[\phi(\vec{X}) | H_0] = \mathbb{P}(T(\vec{X}) \in R) = \int_R f_T(t)dt
+$$
+As we saw earlier, this requires us to find the distribution of the statistic $T(\vec{X})$ under the null hypothesis and its corresponding rejection region $R$, which in general is difficult. However, with Bayesian analysis one can evaluate directly the probability of parameter $p_1$ greater than parameter $p_2$. We can do this by using the Monte Carlo method to evaluate the following integral:
+$$
+P(p_1 > p_2 |\vec{x}) = \int_0^1 \int_0^1 \mathbb{I}(p_1 > p_2 |\vec{x}) \cdot f(p_1|\vec{x})f(p_2|\vec{x})dp_1 dp_2 = E[\mathbb{I}(p_1 > p_2 |\vec{x})]
+$$
+where $\mathbb{I}(p_1 \leq p_2|\vec{x})$ is the indicator function given the data and $f(p_1|\vec{x})$, $f(p_2|\vec{x})$ are the posterior Beta probability density functions for Model1 and Model2 respectively. To estimate this probability, one only needs to simulate pairs of Beta random variables from the two posterior distributions simultaneously, and calculate the average of the indicator function. 
+
+```{r}
+# Instantiate
+
+bayes1=Bayes(data=countdata, alpha=1, beta=1, alphalevel=0.05)
+
+n <- 15
+p <- seq(0.025, 0.975, length.out = 1000)
+
+# Initialize a list to store results
+effData <- lapply(p, function(proportion) {
+  bayes1$effCP(n, proportion)
+})%>%do.call(rbind, .)
+colnames(effData) <- c("CP_Wald", "CP_Bayes")
+
+# Add the p values as the first column
+effData <- data.frame(p = p, effData)
+head(effData)
+```
+
+```{r}
+bayes1$simBayesCoverage()
+```
+
+```{r}
+bayes1$Plot_Bayes()
+```
+
+
+
+
