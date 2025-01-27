@@ -142,6 +142,8 @@ def get_llama_response(user_prompt) -> str:
         return response.message.content # access fields directly from the response object
     except ResponseError as e:
         print('Error:', e.error)
+    except Exception as e:
+        print(f'Error: {e}')
 
 
 
@@ -231,7 +233,7 @@ class TitleAuthorExperiment():
 
 
     def GetTitleAuthor_gemini(self, metadata: pd.DataFrame,):
-        last=self.checkWhichRow(metadata=metadata, model="Llama")
+        last=self.checkWhichRow(metadata=metadata, model="Gemini")
         
         for i in tqdm(range(last, len(metadata)), desc="Processing rows"):
             row = metadata.iloc[i]
@@ -269,6 +271,7 @@ class TitleAuthorExperiment():
             #print(result)
             self.llama_results.append(result)
             self.all_results.append(result)
+            time.sleep(2)
 
         self.saveAsJSON(file_path=self.resultpath['AllResults'], new_data=self.all_results)
 
