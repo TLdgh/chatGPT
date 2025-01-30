@@ -249,6 +249,43 @@ bayes1$simBayesCoverage()
 bayes1$Plot_Bayes()
 ```
 
+# MCMC in Bayesian Inference
+Consider generating a sequence of Markov chain $\{\mathbf{X} \}^{(t)}, t=0,1,2...$ whose state space is either discrete or continuous. When the chain is irreducible and aperiodic, it converges in distribution to a long-run stationary distribution. In MCMC, our goal is to construct such a chain for which the stationary distribution equals the target distribution $f$ for sufficient large t. The difficulty to determining such distributional approximation arises because the stationary distribution can be vastly different from $f$ when t is small, and because the chain of random variables has dependency.
+
+One popular and basic algorithm to generate such a chain is the Metropolis-Hastings algorithm:
+
+Step 1: Pick a proposal distribution $g$ and draw the initial starting point $\mathbf{X}^{(0)} = \mathbf{x}^{(0)}$ at time t=0, with the requirement that $f(\mathbf{x}^{(0)})>0$.
+
+Step 2: Given $\mathbf{x}^{(t)}$, we propose a candidate value $\mathbf{x^*}$ from the proposal distribution $g(\mathbf{X^*} | \mathbf{x^{(t)}})$ and we calculate the following acceptance probability:
+$$
+\alpha(\mathbf{x}^{(t)} , \mathbf{x}^*) = min \left\{ 1,  \frac{f(\mathbf{x}^*)g(\mathbf{x}^{(t)}|\mathbf{x}^*)}{f(\mathbf{x}^{(t)})g(\mathbf{x}^*|\mathbf{x}^{(t)})} \right\}
+$$
+Step 3: accept the candidate $\mathbf{x^*}$ according to the following:
+$$
+\mathbf{X}^{(t+1)} = \begin{cases}
+\mathbf{x}^* \quad \text{with probability} \quad \alpha\\
+\mathbf{x}^{(t)} \quad \text{otherwise}
+\end{cases}
+$$
+We then iterate over large t to generate the chain.
+
+Now suppose we have the proposal distribution $g$ as such: $g(\mathbf{x}^*|\mathbf{x}^{(t)}) = g(\mathbf{x}^*)$, i.e. an independence structure. In this case the acceptance probability simplifies to:
+
+$$
+\alpha(\mathbf{x}^{(t)} , \mathbf{x}^*) = min \left\{ 1,  \frac{f(\mathbf{x}^*)g(\mathbf{x}^{(t)})}{f(\mathbf{x}^{(t)})g(\mathbf{x}^*)} \right\}
+$$
+In Bayesian statistics, suppose we use the prior distribution $p(\mathbf{\theta})$ as the proposal distribution $g$ and the likelihood function $L(\mathbf{\theta|y})$. The posterior distribution $p(\boldsymbol{\theta|y}) \propto p(\boldsymbol{\theta}) L(\boldsymbol{\theta|y})$, so the acceptance ratio becomes:
+
+$$
+R(\boldsymbol{\theta}^{(t)}, \boldsymbol{\theta}^*) = 
+\frac{p(\boldsymbol{\theta}^* \mid \mathbf{y}) p(\boldsymbol{\theta}^{(t)})}{p(\boldsymbol{\theta}^{(t)} \mid \mathbf{y}) p(\boldsymbol{\theta}^*)} 
+= \frac{p(\boldsymbol{\theta}^*) L(\boldsymbol{\theta}^* \mid \mathbf{y}) p(\boldsymbol{\theta}^{(t)})}{p(\boldsymbol{\theta}^{(t)}) L(\boldsymbol{\theta}^{(t)} \mid \mathbf{y}) p(\boldsymbol{\theta}^*)} 
+= \frac{L(\boldsymbol{\theta}^* \mid \mathbf{y})}{L(\boldsymbol{\theta}^{(t)} \mid \mathbf{y})}
+$$
+This gives us an intuitive understanding of the algorithm: if the candidate generated from the prior distribution yields a higher likelihood given the data, then we definitely accept it! Otherwise, maybe.
+
+In linear models like the following example, we specify the prior distributions for the regression coefficients $\beta_0, \beta_1,...$ and conditional on the parameter values and the realized data, we can evaluate the likelihood functions.
+
 ```{r}
 n_iter=10000
 init_values = c(0, 0, rep(0, 7)) 
