@@ -1,4 +1,10 @@
-
+qqplotly<-function(data){
+  data%>%mutate(rank=1:n(), theoq=qnorm((rank-0.5)/n()))%>%
+    mutate(q0.25 = quantile(e,0.25), q0.75=quantile(e,0.75), theoq0.25=qnorm(0.25), theoq0.75=qnorm(0.75), 
+           slope=(q0.75 - q0.25) / (theoq0.75 - theoq0.25), intercept=q0.25-slope*theoq0.25, qqline=intercept+slope*theoq)%>%
+    plot_ly(x=~theoq, y=~e,  type='scatter', mode ='markers')%>%
+    add_trace(x=~theoq, y=~qqline, type = 'scatter', mode = 'lines', line = list(dash = 'dash'), showlegend = FALSE)
+}
 
 
 
@@ -49,7 +55,7 @@ Bayes <- setRefClass(
         model<-as.character(.self$data[[i, "Model"]])
         primarycat<-as.character(.self$data[[i, "Primary_Cat"]])
         x <- .self$data[i, "CountAuth"]%>%as.numeric()
-        n <- 50
+        n <- 200
         
         
         param_1 <- .self$alpha + x
@@ -221,6 +227,158 @@ Bayes <- setRefClass(
     }
   )
 )
+
+
+
+
+
+
+
+
+
+# Define the LogisticRegression class
+BayesianLogisticRegression <- R6Class(
+  "LogisticRegression",
+  public = list(
+    data = NULL,
+    formula = NULL,
+    predictor_vars = NULL,
+    response_var = NULL,
+    posterior_samples = NULL,
+    
+    initialize = function(formula, data) {
+      self$data <- data
+      self$formula <- formula
+      terms_obj <- terms(formula)
+      self$response_var <- as.character(attr(terms_obj, "variables"))[2]  # Extract response variable
+      self$predictor_vars <- attr(terms_obj, "term.labels")  # Extract predictor variables
+    },
+    
+    # Log-likelihood function
+    log_likelihood = function(betas) {
+      df <- self$data %>%
+        mutate(
+          b0 = betas["Intercept"],  # Intercept
+          
+          # Apply categorical encoding: remove first level as reference
+          b_predictors = rowSums(sapply(self$predictor_vars, function(var) {
+            if (is.factor(self$data[[var]])) {
+              ifelse(self$data[[var]] != levels(self$data[[var]])[1], betas[as.character(self$data[[var]])], 0)
+            } else {
+              betas[var] * self$data[[var]]  # Continuous variables remain unchanged
+            }
+          })),
+          
+          log_odds = b0 + b_predictors,
+          p = plogis(log_odds),
+          l = self$data[[self$response_var]] * log(p) + (self$data$Total - self$data[[self$response_var]]) * log(1 - p)
+        )
+      
+      return(sum(df$l))
+    },    
+    
+    # Prior distribution
+    log_prior = function(betas) {
+      sum(dnorm(betas, mean = 0, sd = 5, log = TRUE))  # Normal priors for all coefficients
+    },
+    
+    # Posterior function
+    log_posterior = function(betas) {
+      self$log_likelihood(betas) + self$log_prior(betas)
+    },
+    
+    # Metropolis-Hastings algorithm
+    metropolis_hastings = function(n_iter, init, proposal_sd) {
+      param_names <- c("Intercept", unique(unlist(sapply(self$predictor_vars, function(var) levels(self$data[[var]])[-1] ))))
+      names(init) <- param_names
+      
+      samples <- matrix(NA, ncol = length(param_names), nrow = n_iter)
+      colnames(samples) <- param_names
+      current <- init
+      samples[1, ] <- current
+      
+      for (i in 2:n_iter) {
+        proposal <- rnorm(length(param_names), mean = current, sd = proposal_sd)
+        names(proposal) <- param_names
+        
+        log_alpha <- self$log_posterior(proposal) + self$log_prior(current) - self$log_posterior(current) - self$log_prior(proposal)
+        
+        alpha <- exp(log_alpha)
+        
+        if (runif(1) < alpha) {
+          current <- proposal
+        }
+        samples[i, ] <- current
+      }
+      
+      self$posterior_samples <- samples[-(1:1000), , drop = FALSE]  # Remove burn-in
+      
+      posterior_mean <- colMeans(self$posterior_samples)
+      posterior_sd <- apply(self$posterior_samples, 2, sd)
+      res <- data.frame(Mean = posterior_mean, SD = posterior_sd)
+      
+      return(res)
+    },
+    
+    predictive_check = function(posterior_samples, data) {
+      # Initialize matrix to hold simulated Y values
+      simulated_Y <- matrix(NA, nrow = nrow(posterior_samples), ncol = nrow(data))
+      
+      legends=c()
+      # Loop through each posterior sample and simulate Y values
+      for (i in 1:nrow(data)) {
+        lev=sapply(self$predictor_vars, function(x) as.character(data[[i,x]]))
+        legends=c(legends, paste0(lev, collapse = ""))
+        
+        # Start with the intercept (always present)
+        log_odds <- posterior_samples[, 'Intercept']
+        
+        for(l in lev){
+          if (l %in% colnames(posterior_samples)) {
+            log_odds <- log_odds + posterior_samples[, l]
+          }
+        }
+        
+        probs <- plogis(log_odds)
+        # Simulate Y using binomial distribution
+        simulated_Y[,i] <- sapply(probs, function(p){rbinom(n = 1, size = data$Total[i], prob=p)})
+      }
+      
+      observed_success_rate <- data[,self$response_var] / data$Total  # Observed success rates
+      predicted_success_rate <- simulated_Y%>%as_tibble()%>%map2(., data$Total, ~(.x/.y))%>%as.data.frame() # Predicted success rates
+      colnames(predicted_success_rate) = legends
+      
+      plots <- list()
+      for (j in 1:16) {
+        vline=density(predicted_success_rate[,j])
+        vline=max(vline$y)
+        
+        df=data.frame(X=predicted_success_rate[,j])
+        # Create a histogram for the jth column of predicted_success_rate
+        p <- df%>%plot_ly()%>%
+          add_histogram(x=~X, histnorm = "probability density", name = legends[j]) %>%
+          add_segments(
+            x = observed_success_rate[j,], 
+            xend = observed_success_rate[j,], 
+            y = 0, 
+            yend =vline, 
+            line = list(color = 'black', dash = "dash", width = 3),
+            inherit = FALSE, showlegend=FALSE
+          )
+        
+        # Add the plot to the list
+        plots[[j]] <- p
+      }  
+      
+      # Create a subplot grid 4x4
+      subplot(plots, nrows = 4 )%>%
+        layout(title = "Posterior Predictive Check")
+    }
+    
+  )
+)
+
+
 
 
 

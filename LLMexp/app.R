@@ -38,7 +38,7 @@ server <- function(input, output) {
     data<-countdata()
     p<-data%>%plot_ly(
       x = ~Primary_Cat, 
-      y = ~Count/50, 
+      y = ~Count/200, 
       type = "bar",
       color = ~Type, 
       colors = "Set3" 

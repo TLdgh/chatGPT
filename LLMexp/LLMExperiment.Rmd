@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(shiny)
 library(plotly)
 library(tidyverse)
+library(R6)
 library(here)
 source(here("LLMexp", "Codespace.R"))
 
@@ -34,13 +35,13 @@ shinyAppDir(
 countdata<-exp_results%>%
       transmute(Model=factor(Model),Primary_Cat=factor(Primary_Cat),ResponseAuth,ResponseTitle)%>%
       group_by(Model,Primary_Cat)%>%
-      summarise(CountAuth=sum(ResponseAuth), CountTitle=sum(ResponseTitle), .groups = 'drop')
+      summarise(CountAuth=sum(ResponseAuth), CountTitle=sum(ResponseTitle), .groups = 'drop')%>%mutate(Total=200)
 str(countdata)
 print(countdata)
 ```
 
 #
-The model is:
+The effect model is:
 $$
 y_{ij} = \mu +\tau_i + \beta_j + \epsilon_{ij}, \quad i=1,2,...,a, \quad j=1,2,...,b
 $$
@@ -62,7 +63,6 @@ $$
 
 ```{r}
 fit1=lm(CountAuth~Model+Primary_Cat, data = countdata)
-summary(fit1)
 anova(fit1)
 ```
 
@@ -74,16 +74,33 @@ anova(fit2)
 Note the significance of increase in the error sum of squares, SSE. This suggests that blocking can reduce residual errors given the appropriate design.
 
 ```{r}
-plot_ly(countdata, x=~Primary_Cat, y=~CountAuth, color = ~Model, type = 'scatter', mode="markers")
+fit1$model%>%mutate(e=fit1$residuals)%>%arrange(e)%>%qqplotly()
 ```
 
+Note that the Q-Q plot suggests that the model isn't adequate to describe the relationship.
+
+# GLM
+```{r}
+fit3=glm(cbind(CountAuth, 200-CountAuth)~Model+Primary_Cat, family = binomial(link = 'logit'), data=countdata)
+summary(fit3)
+```
+Intepretation: Llama model increases the odds of success compared to Gemini by `r paste0(round((exp(fit3$coefficients[2])-1)*100,2), "%")`.
+
+Inedequate model if without blocking:
+```{r}
+nullmodel=glm(cbind(CountAuth, 200-CountAuth)~Model, family = binomial(link = 'logit'), data=countdata)
+anova(nullmodel,fit3,test="LRT")
+```
+
+Overfitting if considering interaction:
+```{r}
+fullmodel=glm(cbind(CountAuth, 200-CountAuth)~Model*Primary_Cat, family = binomial(link = 'logit'), data=countdata)
+anova(fit3,fullmodel,test="LRT")
+```
 
 ```{r}
-qqnorm(fit1$residuals, datax = FALSE)
-qqline(fit1$residuals, datax = FALSE, lwd=3)
+fit3$model%>%mutate(e=residuals(fit3, type = "deviance"))%>%arrange(e)%>%qqplotly()
 ```
-
-
 
 # Bayesian Analysis
 
@@ -232,6 +249,36 @@ bayes1$simBayesCoverage()
 bayes1$Plot_Bayes()
 ```
 
+```{r}
+n_iter=10000
+init_values = c(0, 0, rep(0, 7)) 
+proposal_sd <- rep(0.1, 9)
 
+set.seed(100)
+
+# Initialize Model
+model <- BayesianLogisticRegression$new(CountAuth ~ Model + Primary_Cat, countdata)
+
+# Initial Values
+init_values <- rep(0, length(c("Intercept", levels(countdata$Model)[-1], levels(countdata$Primary_Cat)[-1])))
+# Run Metropolis-Hastings
+posterior_estimates <- model$metropolis_hastings(n_iter = n_iter, init = init_values, proposal_sd = 0.1)
+print(posterior_estimates)
+
+```
+
+```{r}
+model$predictive_check(posterior_samples = model$posterior_samples, data=model$data)
+```
+
+
+```{r}
+poissonglm=glm(
+  CountAuth ~ Model+Primary_Cat,               # Poisson regression formula
+  data = countdata,                              # Dataset
+  family = poisson()
+)
+summary(poissonglm)
+```
 
 
