@@ -29,40 +29,38 @@ CI_z <- function(data, threshold, alphalevel) {
 
 
 
-Bayes <- setRefClass(
+Bayes <- R6Class(
   "Bayes",
-  fields = list(
+  public = list(
     data = "tbl_df", 
     alpha = "numeric", 
     beta = "numeric", 
     alphalevel = "numeric", 
-    result = "data.frame"
-  ),
-  
-  methods = list(
+    result = "data.frame",
+    
     initialize = function(data, alpha, beta, alphalevel) {
-      .self$data <- data
-      .self$alpha <- alpha
-      .self$beta <- beta
-      .self$alphalevel <- alphalevel
+      self$data <- data
+      self$alpha <- alpha
+      self$beta <- beta
+      self$alphalevel <- alphalevel
       
-      .self$result <- .self$CI_Bayes()
+      self$result <- self$CI_Bayes()
     },
     
     CI_Bayes = function(){
       res <- list()
-      for (i in 1:nrow(.self$data)) {
-        model<-as.character(.self$data[[i, "Model"]])
-        primarycat<-as.character(.self$data[[i, "Primary_Cat"]])
-        x <- .self$data[i, "CountAuth"]%>%as.numeric()
+      for (i in 1:nrow(self$data)) {
+        model<-as.character(self$data[[i, "Model"]])
+        primarycat<-as.character(self$data[[i, "Primary_Cat"]])
+        x <- self$data[i, "CountAuth"]%>%as.numeric()
         n <- 200
         
         
-        param_1 <- .self$alpha + x
-        param_2 <- .self$beta + n - x
+        param_1 <- self$alpha + x
+        param_2 <- self$beta + n - x
         
         
-        CI <- qbeta(c(.self$alphalevel / 2, 1 - .self$alphalevel / 2), param_1, param_2) %>% round(4)
+        CI <- qbeta(c(self$alphalevel / 2, 1 - self$alphalevel / 2), param_1, param_2) %>% round(4)
         res[[i]] <- data.frame(
           param_1,
           param_2,
@@ -83,7 +81,7 @@ Bayes <- setRefClass(
           "Variance of Success Probability", 
           "CI_L",
           "CI_U",
-          sprintf("%.2f%%-level Credible Interval", (1 - .self$alphalevel) * 100),
+          sprintf("%.2f%%-level Credible Interval", (1 - self$alphalevel) * 100),
           "Model","Primary_Cat"
         ))%>%mutate(CI_L=`Expected Success Probability` - CI_L, CI_U=`Expected Success Probability` - CI_U)
       return(res)
@@ -91,7 +89,7 @@ Bayes <- setRefClass(
     
     Plot_Bayes = function(yrange = c(0, 1, 0.05)) {
       fig <- plot_ly(
-        data = .self$result,
+        data = self$result,
         x = ~Primary_Cat,
         y = ~`Expected Success Probability`,
         color = ~Model,
@@ -114,7 +112,7 @@ Bayes <- setRefClass(
         layout(
           yaxis = list(range = yrange[1:2], dtick = yrange[3]),
           title = list(
-            text = sprintf("Expected Success Probability with %.2f%% Confidence Level", (1 - .self$alphalevel) * 100),
+            text = sprintf("Expected Success Probability with %.2f%% Confidence Level", (1 - self$alphalevel) * 100),
             x = 0.5
           )
         )
@@ -127,19 +125,19 @@ Bayes <- setRefClass(
       k <- 0:n
       
       # Compute parameters for the Bayesian approach
-      param_1 <- .self$alpha + k
-      param_2 <- .self$beta + n - k
+      param_1 <- self$alpha + k
+      param_2 <- self$beta + n - k
       
       # Compute Wald confidence intervals
       CI_Wald <- lapply(k, function(x) {
         phat <- x / n
-        error <- qnorm(.self$alphalevel / 2) * sqrt((phat * (1 - phat)) / n)
+        error <- qnorm(self$alphalevel / 2) * sqrt((phat * (1 - phat)) / n)
         c(phat + error, phat - error)
       })
       
       # Compute Bayesian confidence intervals
       CI_Bayes <- mapply(function(x, y) {
-        qbeta(c(.self$alphalevel / 2, 1 - .self$alphalevel / 2), x, y)
+        qbeta(c(self$alphalevel / 2, 1 - self$alphalevel / 2), x, y)
       }, param_1, param_2, SIMPLIFY = FALSE)
       
       # Determine if p is covered by each interval
@@ -160,7 +158,7 @@ Bayes <- setRefClass(
     
     MeanEffCov = function(n, p) {
       # Initialize a list to store results
-      effData <- lapply(p, function(i) effCP(n, i))
+      effData <- lapply(p, function(i) self$effCP(n, i))
       
       # Convert the list to a data frame
       effData <- do.call(rbind, effData)
@@ -181,7 +179,7 @@ Bayes <- setRefClass(
       
       # Calculate MeanEffCov for each sample size
       MeanEffData <- lapply(n, function(size) {
-        MeanEffCov(size, p)
+        self$MeanEffCov(size, p)
       })
       
       # Convert list to a data frame
@@ -225,9 +223,9 @@ Bayes <- setRefClass(
       # Display the plot
       return(fig)
     }
+    
   )
 )
-
 
 
 

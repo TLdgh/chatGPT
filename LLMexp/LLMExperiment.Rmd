@@ -225,7 +225,7 @@ where $\mathbb{I}(p_1 \leq p_2|\vec{x})$ is the indicator function given the dat
 ```{r}
 # Instantiate
 
-bayes1=Bayes(data=countdata, alpha=1, beta=1, alphalevel=0.05)
+bayes1=Bayes$new(data=countdata, alpha=1, beta=1, alphalevel=0.05)
 
 n <- 15
 p <- seq(0.025, 0.975, length.out = 1000)
