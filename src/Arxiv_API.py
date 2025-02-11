@@ -26,7 +26,7 @@ class Arxiv_API:
         self.search=search
         self.sampling_unit_size=sampling_unit_size
         self.base_url = "http://export.arxiv.org/api/query?"
-        self.file_dir = [rootdir+'/SampleData/' + subj for subj in self.search]
+        self.file_dir = ['/Volumes/Lacie External Hard Drive/LLMSampleData/' + subj for subj in self.search]
 
         if self.search != []:
             self.query = ["search_query=cat:%s&start=%i&max_results=%i" % (subj+"*", start, max_results) for subj in self.search]
@@ -110,7 +110,7 @@ class Arxiv_API:
             self.df = pd.DataFrame([i for i in self.data], columns=dataCol)
 
             jfile = self.df.to_dict()
-            with open(f"{rootdir}/SampleData/metadata.json", "w") as outfile:
+            with open(f"/Volumes/Lacie External Hard Drive/LLMSampleData/metadata.json", "w") as outfile:
                 json.dump(jfile, outfile)
 
     def DownloadResult(
