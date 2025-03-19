@@ -19,3 +19,4 @@ results
 # project file
 *.Rproj
 *.Rhistory
+LLMexp/*_files

@@ -2,27 +2,48 @@
 title: "LLMExperiment"
 author: "Teng Li"
 date: "2025-01-23"
-output: 
-  html_document:
+format: 
+  html:
     toc: true
     toc_depth: 2
-runtime: shiny
+server: shiny
 ---
 
+<style>
+  /* Custom Styling for ANOVA Output */
+  .anova-output {
+    background-color: #f8f9fa;  /* Light gray background */
+    border: 0.5px dashed #333;
+    font-family: monospace;      /* Uses a monospace font for code-style look */
+    font-size: 14px;             /* Adjust font size */
+    white-space: pre-wrap;       /* Ensures text wraps properly */
+    overflow-x: auto;            /* Enables horizontal scrolling if needed */
+    color: #333;                 /* Dark text for readability */
+  }
+  .anova-title {
+  font-weight: normal;        /* Explicitly set to not bold */
+  font-size: 14px;           /* Adjust the size */
+  color: #333;            /* Set title color */
+}
+</style>
+
+
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo=FALSE, warning = FALSE)
 library(shiny)
 library(plotly)
 library(tidyverse)
 library(R6)
 library(here)
+library(kableExtra)
+library(htmltools)
+
 source(here("LLMexp", "Codespace.R"))
 
 exp_results=read.csv(here("results", "exp_results.csv"), header = TRUE)%>%rename(Index=X)
 exp_results[which(is.na(exp_results$Title)),'Title']<-"['NA']"
 exp_results=exp_results%>%mutate(ResponseAuth = Authors==TrueAuthors, ResponseTitle = Title==TrueTitle, cosine_sim_Auth, cosine_sim_Title)
-assign("exp_results", exp_results, envir = .GlobalEnv)
-
 summ_results=read.csv(here("results", "exp_results_summ.csv"), header = TRUE)
 
 ```
@@ -53,20 +74,55 @@ All statistical analyses were performed using R with Metropolis-Hastings algorit
 
 ```{r}
 countdata<-exp_results%>%
-      transmute(Model=factor(Model),Primary_Cat=factor(Primary_Cat),ResponseAuth,ResponseTitle)%>%
-      group_by(Model,Primary_Cat)%>%
-      summarise(CountAuth=sum(ResponseAuth), CountTitle=sum(ResponseTitle), .groups = 'drop')%>%mutate(Total=200)
-str(countdata)
-print(countdata)
+  transmute(Model=factor(Model),Primary_Cat=factor(Primary_Cat),ResponseAuth,ResponseTitle)%>%
+  group_by(Model,Primary_Cat)%>%
+  summarise(CountAuth=sum(ResponseAuth), CountTitle=sum(ResponseTitle), .groups = 'drop')%>%mutate(Total=200)
+countdata%>%kable()%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 ```
 
-```{r app-embed, echo=FALSE}
-shinyAppDir(
-  here("LLMexp"),
-  options = list(
-    width = "100%", height = 550
-  )
-)
+```{r}
+
+selectInput(inputId = "Model",
+            label = "Select a model:",
+            choices = unique(exp_results$Model), # Populate with distinct values
+            selected ="Llama")
+plotlyOutput("plot1")
+
+```
+
+```{r}
+#| context: server
+
+countdata<-reactive({
+  countdata<-exp_results%>%
+    filter(Model == input$Model)%>%
+    transmute(Primary_Cat,ResponseAuth,ResponseTitle)%>%
+    group_by(Primary_Cat)%>%
+    summarise(CountAuth=sum(ResponseAuth), CountTitle=sum(ResponseTitle), .groups = 'drop')%>%
+    pivot_longer(CountAuth:CountTitle, names_to = "Type", values_to = "Count")
+  return(countdata)
+})
+
+output$plot1 <- renderPlotly({
+  data<-countdata()
+  p<-data%>%plot_ly(
+    x = ~Primary_Cat, 
+    y = ~Count/200, 
+    type = "bar",
+    color = ~Type, 
+    colors = "Set3" 
+  )%>%
+    layout(
+      title = paste("Histogram of B vs. C for category:", input$Model),
+      xaxis = list(title = "Category"),
+      yaxis = list(title = "Count"),
+      barmode = "group"
+    )
+  return(p)
+})
+
+
 ```
 
 ## Discussion
@@ -91,11 +147,18 @@ cos_sum_data = summ_results%>%transmute(Model=factor(Model), Primary_Cat=factor(
 fit0=aov(cosine_sim_Summary~Model, data = cos_sum_data)
 fit1=aov(cosine_sim_Summary~Model+Primary_Cat, data = cos_sum_data)
 fit2=aov(cosine_sim_Summary~Model*Primary_Cat, data = cos_sum_data)
-anova(fit0, fit1, fit2)
-```
 
-```{r}
-summary(fit1)
+# Capture the printed ANOVA output as a text string
+anova_text<-capture.output(print(anova(fit0, fit1, fit2)))
+summary_text <- capture.output(print(summary(fit1)))
+
+# Print the ANOVA output inside the styled div
+HTML(paste0("<pre class='anova-output'>", paste(anova_text, collapse = "\n"), "</pre>"))
+
+title <-as.character(formula(fit1))
+title <- paste(title[2], title[1], title[3])
+title <- paste0("<h3 class='anova-title'>Model: ", title, "</h3>")
+HTML(paste0("<pre class='anova-output'>", title, paste(summary_text, collapse = "\n"), "</pre>"))
 ```
 
 Note the decrease in the residual sum of squares, RSS in the additive model. This suggests that blocking can reduce residual errors given the appropriate design.
@@ -116,20 +179,32 @@ plot(rstandard(fit1))
 ### GLM
 ```{r}
 fit3=glm(cbind(CountAuth, 200-CountAuth)~Model+Primary_Cat, family = binomial(link = 'logit'), data=countdata)
-summary(fit3)
+summary_text <- capture.output(print(summary(fit3)))
+title <-as.character(formula(fit3))
+title <- paste(title[2], title[1], title[3])
+title <- paste0("<h3 class='anova-title'>Model: ", title, "</h3>")
+HTML(paste0("<pre class='anova-output'>", title, paste(summary_text, collapse = "\n"), "</pre>"))
 ```
 Intepretation: Llama model increases the odds of success compared to Gemini by `r paste0(round((exp(fit3$coefficients[2])-1)*100,2), "%")`.
 
 Inedequate model if without blocking:
 ```{r}
 nullmodel=glm(cbind(CountAuth, 200-CountAuth)~Model, family = binomial(link = 'logit'), data=countdata)
-anova(nullmodel,fit3,test="LRT")
+anova_text<-capture.output(print(anova(nullmodel,fit3,test="LRT")))
+
+# Print the ANOVA output inside the styled div
+HTML(paste0("<pre class='anova-output'>", paste(anova_text, collapse = "\n"), "</pre>"))
+
 ```
 
 Overfitting if considering interaction:
 ```{r}
 fullmodel=glm(cbind(CountAuth, 200-CountAuth)~Model*Primary_Cat, family = binomial(link = 'logit'), data=countdata)
-anova(fit3,fullmodel,test="LRT")
+anova_text<-capture.output(print(anova(fit3,fullmodel,test="LRT")))
+
+# Print the ANOVA output inside the styled div
+HTML(paste0("<pre class='anova-output'>", paste(anova_text, collapse = "\n"), "</pre>"))
+
 ```
 
 ```{r}
@@ -335,22 +410,13 @@ model <- BayesianLogisticRegression$new(CountAuth ~ Model + Primary_Cat, countda
 init_values <- rep(0, length(c("Intercept", levels(countdata$Model)[-1], levels(countdata$Primary_Cat)[-1])))
 # Run Metropolis-Hastings
 posterior_estimates <- model$metropolis_hastings(n_iter = n_iter, init = init_values, proposal_sd = 0.1)
-print(posterior_estimates)
+posterior_estimates%>%kable()%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 
 ```
 
 ```{r}
 model$predictive_check(posterior_samples = model$posterior_samples, data=model$data)
-```
-
-
-```{r}
-poissonglm=glm(
-  CountAuth ~ Model+Primary_Cat,               # Poisson regression formula
-  data = countdata,                              # Dataset
-  family = poisson()
-)
-summary(poissonglm)
 ```
 
 
