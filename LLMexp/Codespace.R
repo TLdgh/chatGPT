@@ -315,6 +315,20 @@ BayesianLogisticRegression <- R6Class(
       posterior_sd <- apply(self$posterior_samples, 2, sd)
       res <- data.frame(Mean = posterior_mean, SD = posterior_sd)
       
+      # Calculate the 2.5th and 97.5th percentiles for each column
+      lower_quantile <- apply(self$posterior_samples, 2, function(x) quantile(x, 0.025))
+      upper_quantile <- apply(self$posterior_samples, 2, function(x) quantile(x, 0.975))
+      
+      ci_string <- mapply(function(lower, upper) paste0("[", round(lower, 2), ", ", round(upper, 2), "]"), 
+                          lower_quantile, upper_quantile)
+      
+      # Create a data frame with Mean, SD, and CI as a string
+      res <- data.frame(
+        Mean = posterior_mean,
+        SD = posterior_sd,
+        CI = ci_string
+      )
+      
       return(res)
     },
     
@@ -369,8 +383,25 @@ BayesianLogisticRegression <- R6Class(
       }  
       
       # Create a subplot grid 4x4
-      subplot(plots, nrows = 4 )%>%
+      fig<-subplot(plots, nrows = 4 )%>%
         layout(title = "Posterior Predictive Check")
+      return(fig)
+    },
+    
+    simulation_check=function(){
+      simdata=tibble(X=factor(rep(c("A","B"), each=8)), Z=factor(rep(1:8, times=2)), Total=2000,
+                     truep=c(0.225,0.563,0.419,0.261,0.813,0.51,0.354,0.512,0.692,0.909,0.848,0.732,0.971,0.89,0.809,0.891))%>%
+        mutate(Y=rbinom(n(), Total, truep))
+      
+      # Instantiate a sim_model object
+      sim_model <- BayesianLogisticRegression$new(Y ~ X + Z, simdata)
+      
+      # Run Metropolis-Hastings
+      posterior_estimates <- sim_model$metropolis_hastings(n_iter = 10000, init = c(-1,2,2,1,0,3,1,1,1), proposal_sd = 0.25)
+      posterior_estimates=posterior_estimates%>%
+        mutate(TrueParams=c(-1.236763,2.047116,1.490976,0.910750,0.196852,2.707252,1.277635,0.6361274,1.285639))
+      print(posterior_estimates)
+      sim_model$predictive_check(posterior_samples = sim_model$posterior_samples, data=sim_model$data)
     }
     
   )

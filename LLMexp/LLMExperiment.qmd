@@ -1,11 +1,12 @@
 ---
 title: "LLMExperiment"
 author: "Teng Li"
-date: "2025-01-23"
+date: "2025-03-20"
 format: 
   html:
     toc: true
     toc_depth: 2
+    toc-expand: true
 server: shiny
 ---
 
@@ -31,6 +32,7 @@ server: shiny
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo=FALSE, warning = FALSE)
+set.seed(100)
 library(shiny)
 library(plotly)
 library(tidyverse)
@@ -41,48 +43,74 @@ library(htmltools)
 
 source(here("LLMexp", "Codespace.R"))
 
-exp_results=read.csv(here("results", "exp_results.csv"), header = TRUE)%>%rename(Index=X)
-exp_results[which(is.na(exp_results$Title)),'Title']<-"['NA']"
-exp_results=exp_results%>%mutate(ResponseAuth = Authors==TrueAuthors, ResponseTitle = Title==TrueTitle, cosine_sim_Auth, cosine_sim_Title)
-summ_results=read.csv(here("results", "exp_results_summ.csv"), header = TRUE)
+exp_results=read.csv(here("results", "exp_results.csv"), header = TRUE)%>%select(-c(1:2))%>%
+  mutate(ResponseAuth = cosine_sim_Auth==1.0, ResponseTitle = cosine_sim_Title==1.0)
 
+countdata<-exp_results%>%
+  transmute(Model=factor(Model),Primary_Cat=factor(Primary_Cat),ResponseAuth,ResponseTitle)%>%
+  group_by(Model,Primary_Cat)%>%
+  summarise(CountAuth=sum(ResponseAuth), CountTitle=sum(ResponseTitle), .groups = 'drop')%>%mutate(Total=200)
+
+summ_results=read.csv(here("results", "exp_results_summ.csv"), header = TRUE)%>%as_tibble()
 ```
 
 ## Introduction
 
-Intelligent Document Processing (IDP) is a crucial task in natural language processing (NLP), enabling automated extraction of structured information from unstructured documents. With the advancement of large language models (LLMs), their ability to accurately extract key metadata from scientific documents remains an open question. In this study, we evaluate the performance of two state-of-the-art LLMs, Gemini 3.5 and Llama 3.1, in extracting titles and author names from research papers. We employ a Randomized Complete Block Design (RCBD) to control for domain-specific variations by classifying papers into eight academic categories: Mathematics, Computer Science, Physics, Quantitative Biology, Quantitative Finance, Statistics, Economics, and Electrical Engineering & Systems Science. Our goal is to determine whether there are significant differences in extraction accuracy between the two models and to quantify the effects of academic domain on performance.
+Intelligent Document Processing (IDP) is a crucial task in natural language processing (NLP), enabling automated extraction of structured information from unstructured documents. With the advancement of large language models (LLMs), their ability to accurately extract key metadata and summarize information from scientific documents remains an open question. In this study, we evaluate the performance of two state-of-the-art LLMs, Gemini 3.5 and Llama 3.1, in extracting titles and author names from research papers. In addition, we evaluate their ability of summarizing the paper content by examining the cosine similarity between the outcome and the abstract. We employ a Randomized Complete Block Design (RCBD) to control for domain-specific variations by classifying papers into eight academic categories: Mathematics, Computer Science, Physics, Quantitative Biology, Quantitative Finance, Statistics, Economics, and Electrical Engineering & Systems Science. Our goal is to determine whether there are significant differences in extraction and summarization accuracy between the two models and to quantify the effects of academic domain on performance.
 
 ## Methods
 
 ### Experimental Design
-A randomized complete block design (RCBD) was employed to evaluate the performance of the two LLMs (treatments) across eight document categories (blocks). A total of 200 PDF documents were randomly sampled from the arXiv repository for each block, ensuring a balanced representation of domains. The treatments (Gemini 3.5 and Llama 3.1) were applied to each block in a randomized manner to extract the title and author names from the documents. The extracted data were compared against ground truth annotations to determine the count of correct extractions for each treatment-block combination.
+A randomized complete block design (RCBD) was employed to evaluate the performance of the two LLMs (treatments) across eight document categories (blocks). A total of 200 PDF documents were randomly sampled from the arXiv repository for each block, ensuring a balanced representation of domains. The treatments (Gemini 3.5 and Llama 3.1) were applied to each paper in each block in a randomized manner to extract the title and author names from the documents. Meanwhile, the two models were asked to summarize the introduction of each paper. The extracted data were compared against ground truth annotations to determine the count of correct extractions for each treatment-block combination, and the summary data were compared against the abstract by measuring their cosine similarity for each treatment-block combination.
 
 ### Data Collection and Preprocessing
-Documents were categorized into eight blocks based on their subject area. Ground truth metadata (titles and author names) were extracted from the original documents. The LLMs were applied to the documents with the following prompt message: "Extract the title and author names from this research paper: \"{}\". If a field cannot be found, return 'NA'. Do not alter the original information in any way. Extract it and keep it as original as possible.".
+Documents were categorized into eight blocks based on their subject area. Ground truth metadata (titles, author names and abstracts) were extracted from the original documents. The LLMs were applied to the documents with the following prompt message for extraction: 
+
+<div style="text-align: center; background-color: #CCFFFF; width: 80%; margin: 0 auto;">
+  "Extract the title and author names from this research paper: \"{}\". If a field cannot be found, return 'NA'. Do not alter the original information in any way. Extract it and keep it as original as possible."
+</div>
+
+and the prompt message for summarization:
+
+<div style="text-align: center; background-color: #CCFFFF; width: 80%; margin: 0 auto;">
+  "Summarize the following content into one paragraph. Do not produce key bullets or lists."
+</div>
 
 ### Statistical Analysis
-Analysis of Variance (ANOVA): A two-way ANOVA was conducted to test for significant differences in the mean accuracy of the two treatments across the blocks. This analysis assessed the main effects of the treatments and blocks.
+Analysis of Variance (ANOVA): A two-way ANOVA was conducted to test for significant differences in the mean cosine similarity of the two treatments across the blocks. This analysis assessed the main effects of the treatments and blocks in summaring information.
 
 Logistic Linear Regression: A logistic regression model was fitted to evaluate the influence of the treatment (LLM type) and block (document category) on the probability of correct extraction. The model included treatment and block as covariates, without interaction terms to explore domain-specific performance variations.
 
-Bayesian Regression with MCMC: To complement the frequentist approach, a Bayesian regression model was implemented using Markov Chain Monte Carlo (MCMC) sampling. This allowed for the estimation of posterior distributions for the model coefficients, providing a probabilistic interpretation of the treatment and block effects. The Bayesian approach offers advantages over generalized linear models (GLMs) by incorporating prior knowledge and quantifying uncertainty in parameter estimates.
+Bayesian Regression with MCMC: To complement the frequentist approach, a Bayesian regression model was implemented using Markov Chain Monte Carlo (MCMC) sampling. This allowed for the estimation of posterior distributions for the model coefficients, providing a probabilistic interpretation of the treatment and block effects. The Bayesian approach offers further advantages over generalized linear models (GLMs) by incorporating prior knowledge and quantifying uncertainty in parameter estimates.
 
 ### Software and Tools
 All statistical analyses were performed using R with Metropolis-Hastings algorithm for Bayesian regression. Pre-processing and document handling were implemented in Python using the pytesseract and Image libraries.
 
 ## Results
+The tables below is a subset of the experimental outcomes:
 
 ```{r}
-countdata<-exp_results%>%
-  transmute(Model=factor(Model),Primary_Cat=factor(Primary_Cat),ResponseAuth,ResponseTitle)%>%
-  group_by(Model,Primary_Cat)%>%
-  summarise(CountAuth=sum(ResponseAuth), CountTitle=sum(ResponseTitle), .groups = 'drop')%>%mutate(Total=200)
-countdata%>%kable()%>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+summ_results%>%group_by(Model, Primary_Cat) %>%slice_head(n = 1) %>%ungroup()%>%
+  mutate(Abstract=str_trunc(Abstract, width = 50, side = "right"),
+                      Summary=str_trunc(Summary, width = 30, side = "right"))%>%
+  kable(caption = "Table 1: Cosine Similarity Between Model Generated Summary and Abstract",
+                     col.names = c("ID", "Model", "Primary Category","Abstract", "Summary","Cosine Similarity"))%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = FALSE)%>%
+  column_spec(4:5, width = "150px")
+
+countdata%>%kable(caption = "Table 2: Counts of Correct Extraction of Titles and Author Names",
+                  col.names = c("Model", "Primary Category","Author Names", "Titles","Total"))%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),full_width = FALSE)
 ```
 
 ```{r}
+summ_results%>%plot_ly(y=~cosine_sim_Summary,color=~Model, type="box")%>%
+  layout(title = "Cosine Similarity between Summary and Abstract by Model",  
+         xaxis = list(title = "Model"),                   
+         yaxis = list(title = "Cosine Similarity"))        
+```
 
+```{r}
 selectInput(inputId = "Model",
             label = "Select a model:",
             choices = unique(exp_results$Model), # Populate with distinct values
@@ -94,18 +122,17 @@ plotlyOutput("plot1")
 ```{r}
 #| context: server
 
-countdata<-reactive({
-  countdata<-exp_results%>%
+shinydata<-reactive({
+  df<-countdata
+  colnames(df)<-c("Model", "Primary_Cat", "Author", "Title", "Total")
+  df<-df%>%
     filter(Model == input$Model)%>%
-    transmute(Primary_Cat,ResponseAuth,ResponseTitle)%>%
-    group_by(Primary_Cat)%>%
-    summarise(CountAuth=sum(ResponseAuth), CountTitle=sum(ResponseTitle), .groups = 'drop')%>%
-    pivot_longer(CountAuth:CountTitle, names_to = "Type", values_to = "Count")
-  return(countdata)
+    pivot_longer(Author:Title, names_to = "Type", values_to = "Count")
+  return(df)
 })
 
 output$plot1 <- renderPlotly({
-  data<-countdata()
+  data<-shinydata()
   p<-data%>%plot_ly(
     x = ~Primary_Cat, 
     y = ~Count/200, 
@@ -114,9 +141,9 @@ output$plot1 <- renderPlotly({
     colors = "Set3" 
   )%>%
     layout(
-      title = paste("Histogram of B vs. C for category:", input$Model),
+      title = paste("Distribution of Extraction Accuracy By Category for Model:", input$Model),
       xaxis = list(title = "Category"),
-      yaxis = list(title = "Count"),
+      yaxis = list(title = "Accuracy",range = c(0.55, 1)),
       barmode = "group"
     )
   return(p)
@@ -127,7 +154,7 @@ output$plot1 <- renderPlotly({
 
 ## Discussion
 
-### ANOVA on Difference in Means
+### ANOVA on Difference in Cosine Similarity
 
 The effect model is:
 $$
@@ -137,10 +164,10 @@ where a is the number of treament levels and b is the number of blocks. In this 
 
 Let $\mu_i=\mu +\tau=\frac{\sum_{j=1}^b (\mu +\tau_i + \beta_j)}{b}$, the hypothesis of interest is:
 
-$$
-H_0: \mu_1=\mu_2\\
+\begin{align}
+H_0: \mu_1=\mu_2 \\
 H_1: \mu_1 \neq \mu_2
-$$
+\end{align}
 
 ```{r}
 cos_sum_data = summ_results%>%transmute(Model=factor(Model), Primary_Cat=factor(Primary_Cat), cosine_sim_Summary)
@@ -161,22 +188,29 @@ title <- paste0("<h3 class='anova-title'>Model: ", title, "</h3>")
 HTML(paste0("<pre class='anova-output'>", title, paste(summary_text, collapse = "\n"), "</pre>"))
 ```
 
-Note the decrease in the residual sum of squares, RSS in the additive model. This suggests that blocking can reduce residual errors given the appropriate design.
+Note the decrease in the residual sum of squares, RSS in the additive model. This suggests that blocking can reduce residual errors given the appropriate design. In addition, the general complete block design with replications in each block allows us to examine the significance of the interaction term. The ANOVA table above has shown that we didn't have enough evidence to conclude that the interaction term affects the difference, but the category of the research paper is significant in determining the performance difference.
 
 ```{r}
 #fit1$model%>%mutate(e=rstandard(fit1))%>%arrange(e)%>%qqplotly()
 ```
 
-Note that the Q-Q plot suggests that the model isn't adequate to describe the relationship, though the data exhibit equal variance and independence among errors.
+Plot 1 and 3 are plots of residuals and standardized residuals against the fitted values, from which we have observed unequal variances.  
 
+Plot 2 is the Q-Q plot of the standardized residuals, suggesting that linearity and Normality assumptions of the model are reasonable to describe the data.
 
-```{r}
+Plot 4 suggests that the fitted model is sufficient in the sense that we didn't have nonrandom pattern about zero
+
+Plot 5 is a run order of the standardized residuals and it exhibits randomly scattered values around zero with no discernible pattern, indicating independence of the error terms.
+
+```{r, fig.height=18, fig.width=12}
+par(mfrow = c(3,2))
 plot(fit1)
 plot(rstandard(fit1))
 ```
 
 
 ### GLM
+A logistic regression model was fitted to evaluate the influence of the model type and the document cateogy on the success rate of correct extraction of titles and author names from scientific papers. The following model summary suggested that the model type was a major factor 
 ```{r}
 fit3=glm(cbind(CountAuth, 200-CountAuth)~Model+Primary_Cat, family = binomial(link = 'logit'), data=countdata)
 summary_text <- capture.output(print(summary(fit3)))
@@ -185,7 +219,8 @@ title <- paste(title[2], title[1], title[3])
 title <- paste0("<h3 class='anova-title'>Model: ", title, "</h3>")
 HTML(paste0("<pre class='anova-output'>", title, paste(summary_text, collapse = "\n"), "</pre>"))
 ```
-Intepretation: Llama model increases the odds of success compared to Gemini by `r paste0(round((exp(fit3$coefficients[2])-1)*100,2), "%")`.
+
+Interpretation: Llama model increases the odds of success compared to Gemini by `r paste0(round((exp(fit3$coefficients[2])-1)*100,2), "%")`.
 
 Inedequate model if without blocking:
 ```{r}
@@ -208,158 +243,54 @@ HTML(paste0("<pre class='anova-output'>", paste(anova_text, collapse = "\n"), "<
 ```
 
 ```{r}
-plot_ly(countdata, y=~Model, x=~CountAuth, type="scatter", mode="markers")
 fit3$model%>%mutate(e=residuals(fit3, type = "deviance"))%>%arrange(e)%>%qqplotly()
 ```
 
 ### Bayesian Analysis
 
-The most intuitive question one can address is on the success rate of the model in generating the correct answer to the prompt. We are able to measure this probability by comparing the output with the truth data. We draw random samples of articles with their truth data from kaggle and run the LLM on each article independently. We then use various distance measures to qunatify the similarity between the output and the truth data. We finally put a threshold level to the results such that if the measurement outcome deviates from this threshold, then we consider the model failed at generating correct outputs. Therefore it is important to know what the threshold should be. The most restrictive threshold will be zero, showing that there is no difference between the outcome and the truth. This is reasonable for research question 1 and 2, however not a good approach for research question 3 because the summary output from the model will most likely have some difference compared to the original abstract of the article. For research question 3, one can choose an reasonable threshold for analysis, but the best approach should be based on the interpretation of a human after having read the summary output from the model and compared it with the abstract.
-
-Once the appropriate measurement strategy is determined, one can conclude whether the model has successfully generated the correct answer to the prompt or not. The result forms a random sample of Bernoulli trials. Suppose $X_1,...,X_n$ are the random sample of the experimental result for a large language model. The Bernoulli random variables have a support on $\{0, 1\}$, with $X_i=1$ if the model generates a correct answer to the prompt with probability $p$, otherwise $X_i=0$ with probability $1-p$. The success rate $p$ is the parameter of the Bernoulli distribution. Our goal is therefore to estimate this success probabilty and compare it between different models.
-
-
-We can have various hypothesis tests on the success probability $p$. One may consider a right-tailed hypothesis:
-
-$$
-H_0: ~ p \leq p_0 \\
-H_1: ~ p> p_0
-$$
-
-such that we would like to know if the success probability is greater than certain value $p_0$. One may also consider a two-sample hypothesis test:
+Consider a two-sample hypothesis test:
 $$
 H_0: ~ p_1 \leq p_2 \\
 H_1: ~ p_1 > p_2
 $$
 
-such that we would like to know if the success probability of model 1 $p_1$ is greater than the one of model 2 $p_2$. Note that since $p$ is a real number between 0 and 1, it is not informative to havae a two-sided test $H_0: ~ p=0$ VS $H_a: p \neq 0$, so we omit such test.
-
-A general test statistic one can find in most of Statistics textbooks is the normal approximation to the binomial distribution. We can use the likelihood ratio to derive the test statistic for our composite hypothesis:
-$$
-\Lambda(\vec{x})=\frac{\sup_{p \leq p_0} p_0^{\sum_{i=1}^{n} x_i} (1-p_0)^{n-\sum_{i=1}^{n} x_i} }{\sup_{p \in \Theta}  p^{\sum_{i=1}^{n} x_i} (1-p)^{n-\sum_{i=1}^{n} x_i}}
-$$
-
-The maximum likelihood estimator (MLE) of $p$ is $\hat{p}=\frac{1}{n}\sum_{i=1}^{n} x_i$, so $\sum_{i=1}^{n} x_i = n\hat{p}$. The LRT statistic becomes:
-$$
-\Lambda(\vec{x})=
-\begin{cases}
-1 & p_0 \geq \frac{y}{n}\\
-\frac{(p_0)^{n\hat{p}} \cdot (1-p_0)^{n(1-\hat{p})} }{(\hat{p})^{n\hat{p}} \cdot (1-\hat{p})^{n(1-\hat{p})}} & p_0 < \frac{y}{n}
-\end{cases}
-$$
-
-Let $g(\vec{x}):=-\ln{\Lambda(\vec{x})} = n\hat{p}(\ln{\hat{p}}-\ln{p_0})+n(1-\hat{p})(\ln{(1-\hat{p})} - \ln{(1-p_0)})$.
-
-By Taylor's expansion, $\ln{(1-\hat{p})} - \ln{(1-p_0)} \approx - \frac{\hat{p}-p_0}{1-p_0}$, $\ln{\hat{p}} - \ln{p_0} \approx \frac{\hat{p}-p_0}{p_0}$. Therefore,
-$$
-g(\vec{x}) = n(\hat{p}-p_0)\left( \frac{\hat{p}-p_0}{p_0(1-p_0)} \right) = \frac{(\hat{p}-p_0)^2}{p_0(1-p_0)/n}.
-$$
-
-By Central Limit Theorem, $T(\vec{x}):=\frac{\hat{p}-p_0}{\sqrt{p_0(1-p_0)/n}}$ is Normal(0,1) distributed. Thus we have that
-$$
-\Lambda(\vec{x}) < \lambda_0 \equiv T(\vec{x}) > \lambda_0
-$$
-
-Our hypothesis test is
-$$
-\phi(\vec{x}) = 
-\begin{cases}
-1, \quad T(\vec{x}) > \lambda_0\\
-0, \quad T(\vec{x}) \leq \lambda_0
-\end{cases}
-$$
-
-Using the pivotal quantity $Q(\vec{x}, p):=\frac{\hat{p}-p}{\sqrt{p(1-p)/n}}$ we can get the ($1-\alpha$)-level confidence interval for the success rate as $[L(\vec{X}), R(\vec{X})]$ such that:
-$$
-\mathbb{P}(p \in [L(\vec{X}), R(\vec{X})])\geq 1-\alpha
-$$
-
-The interpretation of the confidence interval is important. In a frequentist point of view, our unknown parameter $p$ is a true but fixed value. The confidence interval on the other hand is a random set, thus it is incorrect to state that we are 99% sure that the confidence interval covers the unknown true paramter. It is also incorrect to say that the unknown parameter falls within the confidence interval 99% of the time, because in this statement the unknown parameter is falsely treated as a random variable. Therefore the appropriate interpretation of the confidence interval is: when the experiment is repeated many times to generate random samples and their perspective confidence intervals, 99% of these confidence intervals will cover the unknown fixed parameter.
-
-Alternatively, we can use the Bayesian approach to gain a different understanding of our unknown parameter and to draw inference on it. Assuming we have a prior knowledge of this success rate, say 80%, before observing the data. The Baysian approach allows us to "correct" our degree of beliefs based on the actual observation. In particular, the Bayes' Theorem says that 
+such that we would like to know if the success probability of model 1 $p_1$ is greater than the one of model 2 $p_2$. We adapted the Bayesian approach to gain a different understanding of our unknown parameter and to draw inference on it. Assuming we have a prior knowledge of this success rate, say 80%, before observing the data. The Baysian approach allows us to "correct" our degree of beliefs based on the actual observation. In particular, the Bayes' Theorem says that 
 $$
 P(A|B) = \frac{P(A) \cdot P(B|A)}{P(B)}
 $$
-where $P(A)$ is the prior probability reflecting our prior belief and $P(A|B)$ is the posterior probability after having observed the event B. Such analysis allows us to make an inference on the success rate in a very different point of view, which we will explain later.
+where $P(A)$ is the prior probability reflecting our prior belief and $P(A|B)$ is the posterior probability after having observed the event B. Such analysis allows us to make an inference on the success rate in a very different point of view.
 
-Suppose we assume $Beta(\alpha, \beta)$ is the prior distribution of the success rate p. The prior density function is:
-$$
-f(p; \alpha,\beta) = \frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)} p^{\alpha-1} (1-p)^{\beta-1}, ~ p\in (0,1)
-$$
-We know the expectation and the variance of Beta distribution as:
-$$
-\begin{gather*}
-E(p)= \frac{\alpha}{\alpha+\beta}\\
-Var(p)= \frac{\alpha \beta}{(\alpha+\beta)^2(\alpha+\beta+1)}
-\end{gather*}
-$$
-Thus if we assume that the average success rate is $t_1$ with a variance of $t_2$, then we can solve for the parameters of the prior distribution as 
-$$
-\alpha = - \frac{t_1}{t_2}\cdot (t_1^2-t_1+t_2), \quad \beta=\alpha \cdot \frac{1-t_1}{t_1}.
-$$ 
-
-Since the random sample $X_1,...,X_n$ follows Bernoulli(p) distribution, we have a conjugate pair of the prior and posterior distributions:
-$$
-\begin{align*}
-f(p|\vec{x})&=\frac{f(p)f(\vec{x}|p)}{\int_0^1 f(p)f(\vec{x}|p) dp}=\frac{\frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)} p^{\alpha-1+\sum_{i=1}^n x_i} (1-p)^{\beta-1+n-\sum_{i=1}^n x_i}}{\int_0^1 \frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)} p^{\alpha-1+\sum_{i=1}^n x_i} (1-p)^{\beta-1+n-\sum_{i=1}^n x_i} dp}=\frac{p^{\alpha-1+\sum_{i=1}^n x_i} (1-p)^{\beta-1+n-\sum_{i=1}^n x_i}}{\frac{\Gamma(\alpha+\sum_{i=1}^n x_i)\Gamma(\beta+n-\sum_{i=1}^n x_i)}{\Gamma(\alpha+\beta+n)}}\\
-&=\frac{\Gamma(\alpha+\beta+n)}{\Gamma(\alpha+\sum_{i=1}^n x_i)\Gamma(\beta+n-\sum_{i=1}^n x_i)} p^{\alpha-1+\sum_{i=1}^n x_i} (1-p)^{\beta-1+n-\sum_{i=1}^n x_i}
-\end{align*}
-$$
-i.e. the posterior distribution is $Beta(\alpha+\sum_{i=1}^n x_i, \beta+n-\sum_{i=1}^n x_i)$ with the mean and variance:
+Suppose we assume $Beta(\alpha, \beta)$ is the prior distribution of the success rate p, we then have a conjugate pair of the prior and posterior distributions. The posterior distribution is $Beta(\alpha+\sum_{i=1}^n x_i, \beta+n-\sum_{i=1}^n x_i)$ with the mean and variance:
 $$
 \begin{gather*}
 E(p|\vec{x})=\frac{\alpha+\sum_{i=1}^n x_i}{\alpha+\beta+n}\\
 Var(p|\vec{x})=\frac{(\alpha+\sum_{i=1}^n x_i)(\beta+n-\sum_{i=1}^n x_i)}{(\alpha+\beta+n)^2(\alpha+\beta+n+1)}
 \end{gather*}
 $$
-One can see that asymptotically when we have a large sample size n, the mean of the posterior distribution approaches to the maximum likelihood estimator $\hat{p} =\frac{1}{n}\sum_{i=1}^n x_i$. Thus the specification of a prior is less important if the sample size is large.  This allows us to make a subjective assumption of the success rate based on a probability distribution instead of viewing it as a fixed but unknown number in the frequentist hypothesis test. In the case where $\alpha=\beta=1$, we obtain the non-informative prior $Beta(1,1)$, which is $Uniform([0,1])$ distribution. It's called non-informative because we assume that all p are equally probable. In other words, we no longer put a subjective assumption on $p$. 
+One can see that asymptotically when we have a large sample size n, the mean of the posterior distribution approaches to the maximum likelihood estimator $\hat{p} =\frac{1}{n}\sum_{i=1}^n x_i$ in the frequentist approach. Thus the specification of a prior is less important if the sample size is large.  This allows us to make a subjective assumption of the success rate based on a probability distribution instead of viewing it as a fixed but unknown number in the frequentist hypothesis test. In the case where $\alpha=\beta=1$, we obtain the non-informative prior $Beta(1,1)$, which is $Uniform([0,1])$ distribution. It's called non-informative because we assume that all p are equally probable. In other words, we no longer put a subjective assumption on $p$. 
 
 After having obtained the posterior distribution, we can get the ($1-\alpha$)-level credible interval for the success rate based on the quantile of the posterior as $[L(\vec{x}), R(\vec{x})]$ such that:
 $$
-\mathbb{P}(\bold{p} \in [L(\vec{x}), R(\vec{x})] |\vec{x}) = \int_{L(\vec{x})}^{R(\vec{x})} f(p|\vec{x})dp = 1-\alpha
+\mathbb{P}(\mathbf{p} \in [L(\vec{x}), R(\vec{x})] |\vec{x}) = \int_{L(\vec{x})}^{R(\vec{x})} f(p|\vec{x})dp = 1-\alpha
 $$
 With such definition, it is perfectly fine to interpret the credible interval as: the probability that our success rate falls within the given credible interval is (1-$\alpha$)%. 
 
-Various research papers have shown that the Bayesian Uniform prior yields better estimation of the confidence interval than the one obtained from the normal approximation of the binomial distribution. We can make a simulation to justify this.
-
-One can also test a two-sample hypothesis: $H_0: p1 \leq p2$ VS. $H_1: p1 > p2$ where $p_1$ is the parameter of Model1, and $p_2$ is the parameter of Model2. In the frequentist approach, we often need to specify the significance level $\alpha$, which is the type I error defined by:
-$$
-\alpha = E[\phi(\vec{X}) | H_0] = \mathbb{P}(T(\vec{X}) \in R) = \int_R f_T(t)dt
-$$
-As we saw earlier, this requires us to find the distribution of the statistic $T(\vec{X})$ under the null hypothesis and its corresponding rejection region $R$, which in general is difficult. However, with Bayesian analysis one can evaluate directly the probability of parameter $p_1$ greater than parameter $p_2$. We can do this by using the Monte Carlo method to evaluate the following integral:
-$$
-P(p_1 > p_2 |\vec{x}) = \int_0^1 \int_0^1 \mathbb{I}(p_1 > p_2 |\vec{x}) \cdot f(p_1|\vec{x})f(p_2|\vec{x})dp_1 dp_2 = E[\mathbb{I}(p_1 > p_2 |\vec{x})]
-$$
-where $\mathbb{I}(p_1 \leq p_2|\vec{x})$ is the indicator function given the data and $f(p_1|\vec{x})$, $f(p_2|\vec{x})$ are the posterior Beta probability density functions for Model1 and Model2 respectively. To estimate this probability, one only needs to simulate pairs of Beta random variables from the two posterior distributions simultaneously, and calculate the average of the indicator function. 
+Various research papers have shown that the Bayesian Uniform prior yields better estimation of the confidence interval than the one obtained from the normal approximation of the binomial distribution. We made a simulation to justify this.
 
 ```{r}
 # Instantiate
 
 bayes1=Bayes$new(data=countdata, alpha=1, beta=1, alphalevel=0.05)
-
-n <- 15
-p <- seq(0.025, 0.975, length.out = 1000)
-
-# Initialize a list to store results
-effData <- lapply(p, function(proportion) {
-  bayes1$effCP(n, proportion)
-})%>%do.call(rbind, .)
-colnames(effData) <- c("CP_Wald", "CP_Bayes")
-
-# Add the p values as the first column
-effData <- data.frame(p = p, effData)
-head(effData)
-```
-
-```{r}
 bayes1$simBayesCoverage()
 ```
 
-```{r}
-bayes1$Plot_Bayes()
-```
+With Bayesian analysis one can evaluate directly the probability of parameter $p_1$ greater than parameter $p_2$ since we have the posterior distributions of the parameters. Therefore with Monte Carlo method, we tested the two-sample hypothesis: $H_0: p1 \leq p2$ VS. $H_1: p1 > p2$ where $p_1$ is the parameter of Model1, and $p_2$ is the parameter of Model2.  We evaluated the following integral:
+$$
+P(p_1 > p_2 |\vec{x}) = \int_0^1 \int_0^1 \mathbb{I}(p_1 > p_2 |\vec{x}) \cdot f(p_1|\vec{x})f(p_2|\vec{x})dp_1 dp_2 = E[\mathbb{I}(p_1 > p_2 |\vec{x})]
+$$
+where $\mathbb{I}(p_1 \leq p_2|\vec{x})$ is the indicator function given the data and $f(p_1|\vec{x})$, $f(p_2|\vec{x})$ are the posterior Beta probability density functions for Model1 and Model2 respectively. To estimate this probability, we simulated pairs of Beta random variables from the two posterior distributions simultaneously, and calculate the average of the indicator function. 
 
-# MCMC in Bayesian Inference
+### MCMC in Bayesian Inference
 Consider generating a sequence of Markov chain $\{\mathbf{X} \}^{(t)}, t=0,1,2...$ whose state space is either discrete or continuous. When the chain is irreducible and aperiodic, it converges in distribution to a long-run stationary distribution. In MCMC, our goal is to construct such a chain for which the stationary distribution equals the target distribution $f$ for sufficient large t. The difficulty to determining such distributional approximation arises because the stationary distribution can be vastly different from $f$ when t is small, and because the chain of random variables has dependency.
 
 One popular and basic algorithm to generate such a chain is the Metropolis-Hastings algorithm:
@@ -394,29 +325,49 @@ R(\boldsymbol{\theta}^{(t)}, \boldsymbol{\theta}^*) =
 $$
 This gives us an intuitive understanding of the algorithm: if the candidate generated from the prior distribution yields a higher likelihood given the data, then we definitely accept it! Otherwise, maybe.
 
-In linear models like the following example, we specify the prior distributions for the regression coefficients $\beta_0, \beta_1,...$ and conditional on the parameter values and the realized data, we can evaluate the likelihood functions.
+### Bayesian Linear Regression
+Bayesian logistic regression is a probabilistic approach to modeling binary outcomes using logistic regression while incorporating prior knowledge about parameters. Inference can be different to the conventional regression analysis in the frequentist approach. Instead of point estimates, we obtain a distribution over parameters. Statistical uncertainty is quantified using credible intervals rather than p-values. In addition we can compute posterior probabilities, e.g. $P(\boldsymbol{\beta}>0|\mathbf{y})$, to assess variable importance. 
+
+Model fit assessment in Bayesian logistic regression is different from the frequentist approach. Instead of relying on p-values and significance tests, Bayesian analysis focuses on posterior predictive checks. It compares simulated data from the posterior distribution to the observed data to check model fit. We included a simulation to demonstrate this through Bayesian logistic linear regression:
+
+```{r}
+sim_model <- BayesianLogisticRegression$new(CountAuth ~ Model + Primary_Cat, countdata)
+sim_model$simulation_check()
+```
+
+For this experiment we have nine parameters as listed in the logistic regression in the previous section. We proposed the $Normal(\mu, \sigma^2)$ distribution as the prior for the parameters where $\mu$ are given by the estimated coefficients from the previous section and $\sigma^2 = 0.01$. Then we used the Metropolis-Hastings algorithm to obtain their posterior samples. The proposed model for our experiment is:
+
+\begin{gathered}
+Y_i | \beta_j \sim Bernoulli(p_i) \quad \text {with} \quad logit(p_i)=\boldsymbol{\beta}\mathbf{X_i} \\
+\boldsymbol{\beta} \sim N(\boldsymbol{\mu}, \sigma^2 \mathbf{I})
+\end{gathered}
 
 ```{r}
 n_iter=10000
-init_values = c(0, 0, rep(0, 7)) 
-proposal_sd <- rep(0.1, 9)
+init_values = as.numeric(coefficients(fit3))
+```
 
-set.seed(100)
+```{r, echo=TRUE}
 
-# Initialize Model
+# Instantiate a model object
 model <- BayesianLogisticRegression$new(CountAuth ~ Model + Primary_Cat, countdata)
 
-# Initial Values
-init_values <- rep(0, length(c("Intercept", levels(countdata$Model)[-1], levels(countdata$Primary_Cat)[-1])))
 # Run Metropolis-Hastings
 posterior_estimates <- model$metropolis_hastings(n_iter = n_iter, init = init_values, proposal_sd = 0.1)
-posterior_estimates%>%kable()%>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
-
 ```
+
+```{r}
+posterior_estimates%>%kable(col.names = c('Posterior Mean', 'Posterior Standard Deviation','95% Credible Interval'))%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+Interpretation is the same as in GLM: Llama model increases the odds of success compared to Gemini by `r paste0(round((exp(posterior_estimates['Llama',1])-1)*100,2), "%")`.
+
+The following predictive check shows the histogram of the proportion of correctly extracted author names for each model and category combination in each of 10000 posterior simulated data sets. the vertical line represents the observed success rate.
 
 ```{r}
 model$predictive_check(posterior_samples = model$posterior_samples, data=model$data)
 ```
 
-
+# Conclusion
+In this study, we evaluated the performance of two large language models (LLMs), Gemini 3.5 and Llama 3.1, for extracting titles and author names from research papers, as well as summarizing paper content. A randomized complete block design (RCBD) was used to assess the models across eight academic domains, and various statistical methods, including ANOVA, logistic regression, and Bayesian regression, were employed to analyze the results. The analysis revealed that the Llama model outperformed Gemini in terms of correct extraction of author names, while scientific domain-specific variations also influenced performance. Bayesian analysis, particularly using MCMC sampling, provided a probabilistic framework to assess the models' success rates and make inferences about the differences in their performances. Predictive checks and posterior simulations further supported the findings, offering insights into the models' ability to replicate observed success rates. These results highlight the effectiveness of Llama in document extraction tasks, especially when considering domain-specific effects and leveraging probabilistic approaches like Bayesian analysis for more robust inference.
